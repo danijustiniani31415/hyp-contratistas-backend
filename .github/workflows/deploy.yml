@@ -2,115 +2,53 @@ name: Deploy Backend
 
 on:
   push:
-    branches: [master, demo]   # master -> intranet.abril.pe | demo -> demo.abril.pe
-  workflow_dispatch:
+    branches: [main]
 
-concurrency:
-  group: deploy-backend-${{ github.ref_name }}
-  cancel-in-progress: false
+permissions:
+  contents: read
+  packages: write
 
 env:
-  IMAGE: ghcr.io/chablas/abril-backend   # OJO: todo en minúsculas
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/hyp-contratistas-backend
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write        # para que el runner pueda subir la imagen a GHCR
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Login al registro de contenedores de GitHub (GHCR)
-      - name: Login a GHCR
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configurar Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 2) Compilar la imagen EN EL RUNNER (7GB RAM) y subirla a GHCR.
-      #    Cada rama tiene su propio tag móvil para que un deploy de demo NUNCA pueda
-      #    quedar como :latest y colarse a producción:
-      #      master -> :latest        demo -> :demo
-      #    La sintaxis `A == B && 'x' || 'y'` es el "if/else" de GitHub Actions.
-      - name: Build & push
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ github.ref_name == 'demo' && 'demo' || 'latest' }}
-            ${{ env.IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ env.IMAGE_NAME }}:latest
 
-      # ---------------------------------------------------------------
-      # 3) En el VPS: solo bajar la imagen y reiniciar el contenedor (rápido).
-      #    Solo UNO de los dos pasos siguientes corre, según la rama.
-      #    Cada uno monta SU archivo: prod usa appsettings.Production.json con
-      #    ASPNETCORE_ENVIRONMENT=Production, y demo usa appsettings.Demo.json con
-      #    ASPNETCORE_ENVIRONMENT=Demo. .NET carga appsettings.{Environment}.json, asi
-      #    que el nombre del archivo y el valor de la variable tienen que coincidir.
-      # ---------------------------------------------------------------
-
-      - name: Desplegar en PRODUCCION (intranet.abril.pe)
-        if: github.ref_name == 'master'
-        uses: appleboy/ssh-action@v1.2.0
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER,IMAGE,TAG
           script: |
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            docker pull "$IMAGE:$TAG"
-            docker stop abril-backend 2>/dev/null || true
-            docker rm   abril-backend 2>/dev/null || true
-            docker run -d --name abril-backend --restart unless-stopped \
-              --network host \
-              --log-opt max-size=10m --log-opt max-file=5 \
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+            docker pull ${{ env.IMAGE_NAME }}:latest
+            docker stop hyp-backend || true
+            docker rm hyp-backend || true
+            docker run -d --name hyp-backend --restart unless-stopped --network host \
               -e ASPNETCORE_ENVIRONMENT=Production \
               -e ASPNETCORE_URLS=http://127.0.0.1:8080 \
-              -e ASPNETCORE_FORWARDEDHEADERS_ENABLED=true \
-              -v /opt/abril/appsettings.Production.json:/app/appsettings.Production.json:ro \
-              "$IMAGE:$TAG"
-            docker image prune -f
-            docker logout ghcr.io
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
-          IMAGE: ${{ env.IMAGE }}
-          TAG: latest
-
-      - name: Desplegar en DEMO (demo.abril.pe)
-        if: github.ref_name == 'demo'
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SSH_HOST_DEMO }}
-          username: ${{ secrets.SSH_USER_DEMO }}
-          key: ${{ secrets.SSH_KEY_DEMO }}
-          envs: GHCR_TOKEN,GHCR_USER,IMAGE,TAG
-          script: |
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            docker pull "$IMAGE:$TAG"
-            docker stop abril-backend 2>/dev/null || true
-            docker rm   abril-backend 2>/dev/null || true
-            docker run -d --name abril-backend --restart unless-stopped \
-              --network host \
+              -v /opt/hyp-contratistas/appsettings.Production.json:/app/appsettings.Production.json:ro \
               --log-opt max-size=10m --log-opt max-file=5 \
-              -e ASPNETCORE_ENVIRONMENT=Demo \
-              -e ASPNETCORE_URLS=http://127.0.0.1:8080 \
-              -e ASPNETCORE_FORWARDEDHEADERS_ENABLED=true \
-              -v /opt/abril/appsettings.Demo.json:/app/appsettings.Demo.json:ro \
-              "$IMAGE:$TAG"
-            docker image prune -f
-            docker logout ghcr.io
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
-          IMAGE: ${{ env.IMAGE }}
-          TAG: demo
+              ${{ env.IMAGE_NAME }}:latest
