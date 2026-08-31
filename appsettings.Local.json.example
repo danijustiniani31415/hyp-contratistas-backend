@@ -1,0 +1,12 @@
+{
+  "_comentario": "Copia este archivo como appsettings.Local.json (ya está en .gitignore, nunca se sube) y reemplaza los valores. Se carga siempre, sin importar el entorno, y pisa lo que diga appsettings.json / appsettings.{Environment}.json.",
+  "Database": {
+    "DatabaseProvider": "PostgreSQL",
+    "PostgreSQL": "Host=localhost;Port=5432;Database=TU_BASE_DE_DATOS;Username=TU_USUARIO;Password=TU_PASSWORD;SSL Mode=Disable"
+  },
+  "Jwt": {
+    "Key": "GENERA_UNA_CLAVE_LARGA_Y_UNICA_AQUI",
+    "Issuer": "TuBackend",
+    "Audience": "TuFrontend"
+  }
+}

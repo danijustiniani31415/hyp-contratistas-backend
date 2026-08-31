@@ -1,0 +1,2 @@
+# Nunca commitear el .env real (contiene la contraseña de Grafana).
+.env

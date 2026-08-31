@@ -1,0 +1,7 @@
+namespace Abril_Backend.Features.Costs.Adjudicaciones.Application.Dtos
+{
+    public class SendStep6NotificationDto
+    {
+        public string GraphAccessToken { get; set; } = null!;
+    }
+}

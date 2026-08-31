@@ -1,0 +1,71 @@
+# Stack de logs centralizados para la VPS de Abril.
+#
+#   Promtail  → recolecta los logs de TODOS los contenedores Docker (incluido
+#               abril-backend) leyéndolos vía el socket de Docker.
+#   Loki      → los almacena con retención e índice (búsqueda por etiquetas).
+#   Grafana   → la UI web donde tú y tu jefe ven/filtran los logs.
+#
+# Solo Grafana se expone (en 127.0.0.1:3000, detrás de Nginx con HTTPS + auth).
+# Loki y Promtail quedan en una red interna, nunca expuestos a internet.
+#
+# Levantar:  docker compose -f docker-compose.yml --env-file .env up -d
+# Ver guía completa en README.md.
+
+name: abril-logging
+
+services:
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yml
+    volumes:
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    networks: [logging]
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      # Acceso de solo lectura al socket de Docker para descubrir y seguir los logs
+      # de cada contenedor a través de la API de Docker.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail-positions:/tmp
+    networks: [logging]
+    depends_on: [loki]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:?Define GF_ADMIN_PASSWORD en el archivo .env}
+      - GF_SERVER_ROOT_URL=${GF_ROOT_URL:-http://localhost:3000}
+      # Se sirve bajo un subpath (ej. intranet.abril.pe/logs) en lugar de un subdominio.
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Permite que el rol Viewer use Explore (consultar logs) sin poder guardar cambios.
+      - GF_USERS_VIEWERS_CAN_EDIT=true
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # Provisiona automáticamente Loki como fuente de datos (no hay que configurarlo a mano).
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/loki.yml:ro
+    ports:
+      # Solo accesible desde la propia VPS; se publica al exterior vía Nginx.
+      - "127.0.0.1:3000:3000"
+    networks: [logging]
+    depends_on: [loki]
+
+networks:
+  logging:
+    driver: bridge
+
+volumes:
+  loki-data:
+  promtail-positions:
+  grafana-data:
