@@ -421,6 +421,20 @@ builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
+// HERRAMIENTA TEMPORAL: crea el esquema completo directamente desde el modelo actual
+// (bypass del historial de migraciones, que asume tablas creadas manualmente en la BD
+// real de Abril y por eso falla en una base de datos nueva). Quitar este bloque después
+// de usarlo una sola vez para bootstrapear la BD del proyecto nuevo.
+if (Environment.GetEnvironmentVariable("BOOTSTRAP_SCHEMA") == "1")
+{
+    using var scope = app.Services.CreateScope();
+    var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+    using var ctx = factory.CreateDbContext();
+    ctx.Database.EnsureCreated();
+    Console.WriteLine("BOOTSTRAP_SCHEMA: esquema creado.");
+    return;
+}
+
 // Fuerza la construcción del resolver al arrancar: si Email:DefaultSender no existe en
 // Email:Senders, o un remitente no tiene Address, la app no levanta en vez de descubrirlo
 // recién cuando alguien intenta enviar un correo.
