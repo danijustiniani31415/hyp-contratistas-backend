@@ -430,8 +430,16 @@ if (Environment.GetEnvironmentVariable("BOOTSTRAP_SCHEMA") == "1")
     using var scope = app.Services.CreateScope();
     var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
     using var ctx = factory.CreateDbContext();
-    ctx.Database.EnsureCreated();
-    Console.WriteLine("BOOTSTRAP_SCHEMA: esquema creado.");
+    Console.WriteLine($"BOOTSTRAP_SCHEMA: el modelo tiene {ctx.Model.GetEntityTypes().Count()} tipos de entidad.");
+    try
+    {
+        ctx.Database.EnsureCreated();
+        Console.WriteLine("BOOTSTRAP_SCHEMA: esquema creado.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("BOOTSTRAP_SCHEMA: ERROR -> " + ex);
+    }
     return;
 }
 
