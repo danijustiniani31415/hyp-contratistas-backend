@@ -36,6 +36,7 @@ using Abril_Backend.Features.ArquitecturaComercialModule.Features.RevisionesFeat
 using Abril_Backend.Features.PlaneamientoBimFeature.Infrastructure.Models;
 using Abril_Backend.Shared.Models;
 using Abril_Backend.Features.SsomaModule.InduccionProgramacionFeature.Infrastructure.Models;
+using Abril_Backend.Features.PersonasModule.Infrastructure.Models;
 
 namespace Abril_Backend.Infrastructure.Data
 {
@@ -53,6 +54,20 @@ namespace Abril_Backend.Infrastructure.Data
         /// cuerpo nunca se ejecuta en memoria. Registrada en <see cref="ConfigurePostgreSQL"/>.
         /// </summary>
         public static string Unaccent(string input) => throw new NotSupportedException();
+        // ── Las Bravas / HP Constructores: Fase 1, Modelo de Personas ──────
+        public DbSet<Persona> Persona { get; set; }
+        public DbSet<TipoVinculo> TipoVinculo { get; set; }
+        public DbSet<EmpresaContratista> EmpresaContratista { get; set; }
+        public DbSet<Cargo> Cargo { get; set; }
+        public DbSet<VinculoLaboral> VinculoLaboral { get; set; }
+        public DbSet<UsuarioSistema> UsuarioSistema { get; set; }
+        public DbSet<Rol> Rol { get; set; }
+        public DbSet<Permiso> Permiso { get; set; }
+        public DbSet<RolPermiso> RolPermiso { get; set; }
+        public DbSet<Proyecto> Proyecto { get; set; }
+        public DbSet<Almacen> Almacen { get; set; }
+        public DbSet<UsuarioAsignacion> UsuarioAsignacion { get; set; }
+
         public DbSet<Area> Area { get; set; }
         public DbSet<SubArea> SubArea { get; set; }
         public DbSet<ConstructionSiteLogbookControl> ConstructionSiteLogbookControl { get;set; }

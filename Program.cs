@@ -15,6 +15,7 @@ using Abril_Backend.Application.Services;
 using Abril_Backend.Infrastructure.Services;
 using Abril_Backend.Application.Interfaces;
 using Abril_Backend.Features.AuthModule;
+using Abril_Backend.Features.PersonasModule;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Identity;
@@ -187,6 +188,7 @@ else
 }
 
 builder.Services.AddCostsModule(builder.Configuration);
+builder.Services.AddPersonasModule();
 builder.Services.AddContractorsModule();
 builder.Services.AddConfigurationModule();
 builder.Services.AddAuthModule(builder.Configuration);
@@ -350,6 +352,21 @@ builder.Services.AddSwaggerGen(c =>
         { new OpenApiSecuritySchemeReference("Bearer"), new List<string>() }
     });
     c.MapType<IFormFile>(() => new OpenApiSchema { Type = JsonSchemaType.String, Format = "binary" });
+
+    // [REVISADO] Este backend es fork de Abril-Backend: todo su código de Abril (Grupo
+    // Inmobiliario) se queda como referencia, pero HP Constructores / Las Bravas no lo ejecuta
+    // como API propia. Varias acciones de Abril (combinaciones de [FromForm]/IFormFile que
+    // Swashbuckle no sabe describir) tumbaban /swagger/v1/swagger.json COMPLETO, incluyendo los
+    // endpoints nuevos de Las Bravas (lb-auth). En vez de perseguir cada bug de Swagger en
+    // código que no se va a usar, se excluye de la documentación cualquier acción que no
+    // pertenezca a un namespace propio de Las Bravas (agregar el nuevo módulo acá cuando se cree).
+    var namespacesLasBravas = new[] { "Abril_Backend.Features.PersonasModule" };
+    c.DocInclusionPredicate((docName, apiDesc) =>
+    {
+        var controllerNamespace = (apiDesc.ActionDescriptor
+            as Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor)?.ControllerTypeInfo.Namespace;
+        return controllerNamespace != null && namespacesLasBravas.Any(prefix => controllerNamespace.StartsWith(prefix));
+    });
 });
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options => {

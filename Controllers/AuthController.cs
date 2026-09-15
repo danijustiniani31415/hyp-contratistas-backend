@@ -37,25 +37,17 @@ namespace Abril_Backend.Controllers
             }
         }
 
-        // AllowAnonymous a propósito: cuando el front llama a /refresh el access token
-        // (JWT de 2 min) normalmente ya expiró; la credencial aquí es el session token.
+        // [REVISADO] Este login legacy de Abril (feature/role_feature/user_role/workers/person/
+        // puesto) no aplica a HP Constructores / Las Bravas — este proyecto usa
+        // /api/v1/lb-auth/login. Se corta acá con 401 limpio en vez de dejar que
+        // _authService.Refresh() ejecute SQL crudo contra tablas que no existen en esta base
+        // (relación «feature» no existe) — eso generaba un 500 con stacktrace de Npgsql en cada
+        // intento en vez de un rechazo simple.
         [AllowAnonymous]
         [HttpPost("refresh")]
-        public async Task<IActionResult> Refresh(RefreshRequestDTO dto)
+        public IActionResult Refresh(RefreshRequestDTO dto)
         {
-            try
-            {
-                var result = await _authService.Refresh(dto.SessionToken);
-                return Ok(result);
-            }
-            catch (AbrilException ex)
-            {
-                return StatusCode(ex.StatusCode, new { message = ex.Message });
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." });
-            }
+            return Unauthorized(new { message = "El login legacy de Abril no aplica en este proyecto. Usa /api/v1/lb-auth/login." });
         }
 
         [HttpPost("set-password")]

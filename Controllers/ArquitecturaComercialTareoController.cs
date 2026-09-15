@@ -9,6 +9,14 @@ using Abril_Backend.Shared.Filters;
 
 namespace Abril_Backend.Controllers
 {
+    // [REVISADO] Arquitectura Comercial es dominio exclusivo de Abril (Grupo Inmobiliario) — HP
+    // Constructores / Las Bravas no lo usa directamente, solo queda como referencia de código.
+    // IgnoreApi=true: lo saca de Swagger sin borrar el controller ni cambiar su comportamiento en
+    // runtime. Se necesitaba además porque SubirAutorizacion tiene una combinación de parámetros
+    // que Swashbuckle no sabe describir y tumbaba /swagger/v1/swagger.json completo para TODA la
+    // API (incluida lb-auth) — no vale la pena perseguir bugs de Swagger en código que no se va
+    // a usar.
+    [ApiExplorerSettings(IgnoreApi = true)]
     [ApiController]
     [Authorize]
     [Route("api/v1/arquitectura-comercial/tareo")]
@@ -110,6 +118,7 @@ namespace Abril_Backend.Controllers
         }
 
         [HttpPost("autorizacion/{workerId:int}/documento")]
+        [Consumes("multipart/form-data")]
         public async Task<IActionResult> SubirAutorizacion(int workerId, [FromForm] IFormFile file)
         {
             if (!EsGestorAc()) return Forbid();
