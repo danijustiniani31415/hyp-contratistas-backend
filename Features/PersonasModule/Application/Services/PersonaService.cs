@@ -1,10 +1,14 @@
+using System.Security.Cryptography;
 using Abril_Backend.Application.Exceptions;
 using Abril_Backend.Features.PersonasModule.Application.Dtos;
 using Abril_Backend.Features.PersonasModule.Application.Interfaces;
 using Abril_Backend.Features.PersonasModule.Infrastructure.Models;
 using Abril_Backend.Infrastructure.Data;
+using Abril_Backend.Infrastructure.Interfaces;
+using Abril_Backend.Infrastructure.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Abril_Backend.Features.PersonasModule.Application.Services
 {
@@ -12,11 +16,19 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
     {
         private readonly IDbContextFactory<AppDbContext> _factory;
         private readonly IPasswordHasher<UsuarioSistema> _passwordHasher;
+        private readonly IEmailService _emailService;
+        private readonly FrontendSettings _frontendSettings;
 
-        public PersonaService(IDbContextFactory<AppDbContext> factory, IPasswordHasher<UsuarioSistema> passwordHasher)
+        public PersonaService(
+            IDbContextFactory<AppDbContext> factory,
+            IPasswordHasher<UsuarioSistema> passwordHasher,
+            IEmailService emailService,
+            IOptions<FrontendSettings> frontendSettings)
         {
             _factory = factory;
             _passwordHasher = passwordHasher;
+            _emailService = emailService;
+            _frontendSettings = frontendSettings.Value;
         }
 
         public async Task<PersonaListResponseDto> List(string? search, int page, int pageSize)
@@ -163,37 +175,81 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
             var persona = await ctx.Persona.FindAsync(personaId)
                 ?? throw new AbrilException("Persona no encontrada.", 404);
 
+            var email = dto.EmailLogin.Trim().ToLower();
+
             // [REVISADO en CONTEXT_LOGISTICA.md] 1 persona = máximo 1 usuario_sistema — si ya
             // tiene uno (aunque esté INACTIVO), se reactiva en vez de crear uno nuevo.
             var usuarioExistente = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.PersonaId == personaId);
+            UsuarioSistema usuario;
             if (usuarioExistente != null)
             {
                 if (usuarioExistente.Estado == "ACTIVO")
                     throw new AbrilException("Esta persona ya tiene un usuario de sistema activo.", 409);
 
                 usuarioExistente.Estado = "ACTIVO";
-                usuarioExistente.EmailLogin = dto.EmailLogin;
-                usuarioExistente.PasswordHash = _passwordHasher.HashPassword(usuarioExistente, dto.Password);
-                await ctx.SaveChangesAsync();
-                return await BuildDetail(ctx, persona);
+                usuarioExistente.EmailLogin = email;
+                usuario = usuarioExistente;
+            }
+            else
+            {
+                var emailEnUso = await ctx.UsuarioSistema.AnyAsync(u => u.EmailLogin == email);
+                if (emailEnUso)
+                    throw new AbrilException("Ese correo ya está en uso por otro usuario.", 409);
+
+                usuario = new UsuarioSistema
+                {
+                    PersonaId = personaId,
+                    EmailLogin = email,
+                    Estado = "ACTIVO",
+                    CreadoEn = DateTimeOffset.UtcNow,
+                };
+                ctx.UsuarioSistema.Add(usuario);
             }
 
-            var emailEnUso = await ctx.UsuarioSistema.AnyAsync(u => u.EmailLogin == dto.EmailLogin);
-            if (emailEnUso)
-                throw new AbrilException("Ese correo ya está en uso por otro usuario.", 409);
-
-            var usuario = new UsuarioSistema
-            {
-                PersonaId = personaId,
-                EmailLogin = dto.EmailLogin,
-                Estado = "ACTIVO",
-                CreadoEn = DateTimeOffset.UtcNow,
-            };
-            usuario.PasswordHash = _passwordHasher.HashPassword(usuario, dto.Password);
-            ctx.UsuarioSistema.Add(usuario);
+            // Contraseña interna aleatoria e inutilizable — nadie la conoce nunca. La persona
+            // la define ella misma con el enlace de activación de abajo (mismo mecanismo que
+            // "olvidé mi contraseña"). Así el admin jamás maneja ni ve una contraseña ajena.
+            usuario.PasswordHash = _passwordHasher.HashPassword(usuario, Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             await ctx.SaveChangesAsync();
 
+            var tokensPrevios = await ctx.LbUsuarioPasswordToken
+                .Where(t => t.UsuarioSistemaId == usuario.Id && !t.Usado)
+                .ToListAsync();
+            foreach (var t in tokensPrevios) t.Usado = true;
+            if (tokensPrevios.Count > 0) await ctx.SaveChangesAsync();
+
+            var token = GenerarToken();
+            ctx.LbUsuarioPasswordToken.Add(new LbUsuarioPasswordToken
+            {
+                UsuarioSistemaId = usuario.Id,
+                Token = token,
+                ExpiraEn = DateTime.UtcNow.AddHours(48),
+                Usado = false,
+                CreadoEn = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+
+            var link = $"{_frontendSettings.LbSetPasswordUrl}?token={token}";
+            var html = $@"<h2>Bienvenido a HP Constructores Generales</h2>
+<p>Hola {persona.Nombres}, se creó tu acceso al sistema.</p>
+<p>Haz clic en el siguiente enlace para crear tu contraseña y empezar a usarlo:</p>
+<a href='{link}' style='background:#0F172A;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;margin:16px 0'>Activar mi cuenta</a>
+<p>Este enlace expira en 48 horas.</p>";
+
+            await _emailService.SendAsync(
+                to: new List<string> { email },
+                subject: "Activa tu cuenta - HP Constructores Generales",
+                body: html,
+                isHtml: true);
+
             return await BuildDetail(ctx, persona);
+        }
+
+        /// <summary>Token opaco de un solo uso — mismo formato que LbAuthService.GenerarToken.</summary>
+        private static string GenerarToken()
+        {
+            var bytes = RandomNumberGenerator.GetBytes(64);
+            return Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").Replace("=", "");
         }
 
         public async Task<PersonaDetailDto> NuevaAsignacion(int personaId, NuevaAsignacionDto dto, long? otorgadoPor)
@@ -226,6 +282,25 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
             return await BuildDetail(ctx, persona);
         }
 
+        public async Task<PersonaDetailDto> RevocarAsignacion(int personaId, long asignacionId)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var persona = await ctx.Persona.FindAsync(personaId)
+                ?? throw new AbrilException("Persona no encontrada.", 404);
+
+            var usuario = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.PersonaId == personaId)
+                ?? throw new AbrilException("Esta persona no tiene usuario de sistema.", 404);
+
+            var asignacion = await ctx.UsuarioAsignacion
+                .FirstOrDefaultAsync(a => a.Id == asignacionId && a.UsuarioSistemaId == usuario.Id && a.FechaFin == null)
+                ?? throw new AbrilException("Asignación no encontrada o ya revocada.", 404);
+
+            asignacion.FechaFin = DateOnly.FromDateTime(DateTime.UtcNow);
+            await ctx.SaveChangesAsync();
+
+            return await BuildDetail(ctx, persona);
+        }
+
         public async Task<CatalogosPersonasDto> GetCatalogos()
         {
             using var ctx = _factory.CreateDbContext();
@@ -238,9 +313,11 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 EmpresasContratistas = await ctx.EmpresaContratista.Where(e => e.Activo)
                     .Select(e => new CatalogoItemDto { Id = e.Id, Nombre = e.RazonSocial }).ToListAsync(),
                 Roles = await ctx.Rol.Where(r => r.Activo)
-                    .Select(r => new CatalogoItemDto { Id = r.Id, Nombre = r.Nombre }).ToListAsync(),
+                    .Select(r => new RolCatalogoItemDto { Id = r.Id, Nombre = r.Nombre, EsGlobal = r.EsGlobal }).ToListAsync(),
                 Proyectos = await ctx.Proyecto
                     .Select(p => new CatalogoItemDto { Id = p.Id, Nombre = p.Nombre }).ToListAsync(),
+                Almacenes = await ctx.Almacen.Where(a => a.Activo)
+                    .Select(a => new AlmacenCatalogoItemDto { Id = a.Id, Nombre = a.Nombre, ProyectoId = a.ProyectoId }).ToListAsync(),
             };
         }
 
@@ -268,18 +345,23 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
 
             var usuario = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.PersonaId == persona.Id);
 
-            var asignaciones = new List<LbAsignacionDto>();
+            var asignaciones = new List<AsignacionDetalleDto>();
             if (usuario != null)
             {
                 asignaciones = await ctx.UsuarioAsignacion
                     .Where(a => a.UsuarioSistemaId == usuario.Id && a.FechaFin == null)
                     .Include(a => a.Rol)
-                    .Select(a => new LbAsignacionDto
+                    .Include(a => a.Proyecto)
+                    .Include(a => a.Almacen)
+                    .OrderByDescending(a => a.FechaInicio)
+                    .Select(a => new AsignacionDetalleDto
                     {
-                        RolCodigo = a.Rol!.Codigo,
+                        Id = a.Id,
+                        RolNombre = a.Rol!.Nombre,
                         EsGlobal = a.Rol.EsGlobal,
-                        ProyectoId = a.ProyectoId,
-                        AlmacenId = a.AlmacenId,
+                        ProyectoNombre = a.Proyecto != null ? a.Proyecto.Nombre : null,
+                        AlmacenNombre = a.Almacen != null ? a.Almacen.Nombre : null,
+                        FechaInicio = a.FechaInicio,
                     })
                     .ToListAsync();
             }

@@ -23,4 +23,15 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public List<LbAsignacionDto> Asignaciones { get; set; } = new();
         public List<string> Permisos { get; set; } = new();
     }
+
+    public class LbSolicitarResetDto
+    {
+        public string Email { get; set; } = null!;
+    }
+
+    public class LbResetPasswordDto
+    {
+        public string Token { get; set; } = null!;
+        public string NuevaPassword { get; set; } = null!;
+    }
 }

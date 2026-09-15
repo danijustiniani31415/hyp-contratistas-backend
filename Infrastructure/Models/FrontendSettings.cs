@@ -4,5 +4,6 @@ namespace Abril_Backend.Infrastructure.Models
     {
         public string SetPasswordUrl { get; set; }
         public string ContractorCredentialsUrl { get; set; }
+        public string LbSetPasswordUrl { get; set; }
     }
 }

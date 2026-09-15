@@ -13,5 +13,15 @@ namespace Abril_Backend.Features.PersonasModule.Application.Interfaces
         /// producción.
         /// </summary>
         Task<LbLoginResponseDto> SeedAdmin(LbLoginRequestDto request);
+
+        /// <summary>
+        /// Genera un token de reset (invalidando los previos) y envía el correo con el enlace.
+        /// Nunca lanza ni informa si el email no existe — evita que alguien use este endpoint
+        /// para averiguar qué correos están registrados.
+        /// </summary>
+        Task SolicitarReset(LbSolicitarResetDto request);
+
+        /// <summary>Valida el token y actualiza la contraseña; marca el token como usado.</summary>
+        Task ResetPassword(LbResetPasswordDto request);
     }
 }

@@ -37,6 +37,12 @@ using Abril_Backend.Features.PlaneamientoBimFeature.Infrastructure.Models;
 using Abril_Backend.Shared.Models;
 using Abril_Backend.Features.SsomaModule.InduccionProgramacionFeature.Infrastructure.Models;
 using Abril_Backend.Features.PersonasModule.Infrastructure.Models;
+using Abril_Backend.Features.CatalogoModule.Infrastructure.Models;
+using Abril_Backend.Features.AlmacenModule.Infrastructure.Models;
+using Abril_Backend.Features.PedidosModule.Infrastructure.Models;
+using Abril_Backend.Features.EppModule.Infrastructure.Models;
+using Abril_Backend.Features.HerramientasModule.Infrastructure.Models;
+using Abril_Backend.Features.ComprasModule.Infrastructure.Models;
 
 namespace Abril_Backend.Infrastructure.Data
 {
@@ -67,6 +73,27 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<Proyecto> Proyecto { get; set; }
         public DbSet<Almacen> Almacen { get; set; }
         public DbSet<UsuarioAsignacion> UsuarioAsignacion { get; set; }
+        public DbSet<LbUsuarioPasswordToken> LbUsuarioPasswordToken { get; set; }
+        // ── Las Bravas / HP Constructores: Catálogo Maestro (Fase 1, punto 2) ──
+        public DbSet<CategoriaProducto> CategoriaProducto { get; set; }
+        public DbSet<Producto> Producto { get; set; }
+        // ── Las Bravas / HP Constructores: Almacén / Kardex (Fase 1, punto 3) ──
+        public DbSet<Stock> Stock { get; set; }
+        public DbSet<Movimiento> Movimiento { get; set; }
+        // ── Las Bravas / HP Constructores: Pedidos (Fase 2) ──
+        public DbSet<Pedido> Pedido { get; set; }
+        public DbSet<PedidoItem> PedidoItem { get; set; }
+        // ── Las Bravas / HP Constructores: EPP (Fase 2) ──
+        public DbSet<EntregaEpp> EntregaEpp { get; set; }
+        public DbSet<EntregaEppItem> EntregaEppItem { get; set; }
+        // ── Las Bravas / HP Constructores: Herramientas y Equipos (Fase 2) ──
+        public DbSet<Prestamo> Prestamo { get; set; }
+        public DbSet<PrestamoItem> PrestamoItem { get; set; }
+        // ── Las Bravas / HP Constructores: Compras (Fase 3) ──
+        public DbSet<Proveedor> Proveedor { get; set; }
+        public DbSet<OrdenCompra> OrdenCompra { get; set; }
+        public DbSet<OrdenCompraItem> OrdenCompraItem { get; set; }
+        public DbSet<OrdenCompraRecepcion> OrdenCompraRecepcion { get; set; }
 
         public DbSet<Area> Area { get; set; }
         public DbSet<SubArea> SubArea { get; set; }

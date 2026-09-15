@@ -10,6 +10,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Interfaces
         Task<PersonaDetailDto> NuevoVinculo(int personaId, NuevoVinculoDto dto);
         Task<PersonaDetailDto> CrearUsuario(int personaId, CrearUsuarioDto dto, long? otorgadoPor);
         Task<PersonaDetailDto> NuevaAsignacion(int personaId, NuevaAsignacionDto dto, long? otorgadoPor);
+        Task<PersonaDetailDto> RevocarAsignacion(int personaId, long asignacionId);
         Task<CatalogosPersonasDto> GetCatalogos();
     }
 }

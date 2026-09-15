@@ -98,5 +98,16 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
+
+        [HttpPost("{id:int}/asignaciones/{asignacionId:long}/revocar")]
+        public async Task<IActionResult> RevocarAsignacion(int id, long asignacionId)
+        {
+            try
+            {
+                return Ok(await _service.RevocarAsignacion(id, asignacionId));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
     }
 }

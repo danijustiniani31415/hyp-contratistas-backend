@@ -88,22 +88,25 @@ notificaciones.
 
 ## 3. MÓDULOS Y ORDEN DE IMPLEMENTACIÓN
 
-**FASE 1 — Cimientos**
+> **Estado real de implementación → ver sección 11.** Esta lista es el plan original; no la edites
+> para marcar avance, eso vive aparte para no perder el plan de referencia.
+
+**FASE 1 — Cimientos** ✅ completa (2026-09-15)
 1. Modelo de Personas (persona → vínculo laboral → usuario sistema → rol/permiso/scope)
 2. Catálogo Maestro (productos, categorías, fuzzy search)
 3. Almacén/Kardex multi-almacén
 
-**FASE 2 — Operación diaria**
+**FASE 2 — Operación diaria** ✅ completa (2026-09-15)
 4. Pedidos (creación → aprobación Gerencia General → estados)
-5. EPP (tallas, entrega individual, cargo digital)
+5. EPP (tallas, entrega individual, cargo digital — cargo digital con firma queda pendiente, ver sección 11)
 6. Herramientas y Equipos (préstamo, hoja de ruta de retiro)
 
-**FASE 3 — Cadena completa**
-7. Compras (orden de compra cuando no hay stock)
-8. Guías de Remisión SUNAT
+**FASE 3 — Cadena completa** 🔧 en curso — punto 7 listo, 8/9/10 pendientes
+7. Compras (orden de compra cuando no hay stock) ✅ 2026-09-15
+8. Guías de Remisión SUNAT ⬜
 9. Motor de Alertas y Notificaciones (el modelo de reglas se diseña ya en la sección 5, para no
-   rehacer el modelo de roles cuando llegue esta fase)
-10. Documentos/SharePoint (bibliotecas enlazadas)
+   rehacer el modelo de roles cuando llegue esta fase) ⬜
+10. Documentos/SharePoint (bibliotecas enlazadas) ⬜
 
 ## 4. MODELO DE PERSONAS Y ROLES (la base de TODO el sistema)
 
@@ -598,3 +601,50 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
 - `Shared/Data/AppContext.cs`, método `ConfigurePostgreSQL` — patrón a seguir para cualquier
   override de nombre de columna/tabla que choque con palabras reservadas de Postgres o con la
   convención snake_case.
+
+## 11. ESTADO REAL DE IMPLEMENTACIÓN (actualizar esto, no la sección 3)
+
+> Última actualización: 2026-09-15. Cada módulo listado abajo tiene su propio `Features/<X>Module/`
+> en el backend (Application/Interfaces/Services/Dtos, Infrastructure/Models, Presentation) y su
+> propia pantalla en el frontend (`features/<x>/`), conectados en `app.routes.ts` y en el nav
+> compartido `shared/components/lb-nav/`. Los puntos 4-7 (Pedidos, EPP, Herramientas, Compras) NO
+> tenían DDL en este documento cuando se implementaron — el diseño de sus tablas se hizo en el
+> momento, documentado en el propio SQL de cada uno.
+
+| # | Módulo | Backend | Frontend | Migración SQL | Permisos nuevos |
+|---|---|---|---|---|---|
+| 1 | Personas | `PersonasModule` | `/personas`, `/personas/:id` | (sección 4.3, ya corrida) | — |
+| — | Login/Auth | `PersonasModule` (LbAuthService) | `/auth/login`, `/auth/olvide-password`, `/auth/restablecer-password` | `2026-09-15_lb_usuario_password_token.sql` | — |
+| 2 | Catálogo Maestro | `CatalogoModule` | `/catalogo` | `2026-09-15_lb_catalogo_maestro.sql` | — |
+| 3 | Almacén/Kardex | `AlmacenModule` | `/almacen` | `2026-09-15_lb_almacen_kardex.sql` | — |
+| 4 | Pedidos | `PedidosModule` | `/pedidos` | `2026-09-15_lb_pedidos.sql` | `PEDIDO_CREAR`, `PEDIDO_APROBAR`, `PEDIDO_ENTREGAR`, `PEDIDO_VER_TODOS` |
+| 5 | EPP | `EppModule` | `/epp` | `2026-09-15_lb_entrega_epp.sql` | `EPP_ENTREGAR` |
+| 6 | Herramientas y Equipos | `HerramientasModule` | `/herramientas` | `2026-09-15_lb_prestamo_herramienta.sql` | `HERRAMIENTA_PRESTAR`, `HERRAMIENTA_DEVOLVER` |
+| 7 | Compras | `ComprasModule` | `/compras` | `2026-09-15_lb_compras.sql` | `COMPRA_CREAR`, `COMPRA_RECIBIR` |
+| 8 | Guías de Remisión SUNAT | ⬜ no empezado | | | |
+| 9 | Alertas/Notificaciones | ⬜ no empezado (modelo en sección 5, sin tablas creadas) | | | |
+| 10 | Documentos/SharePoint | ⬜ no empezado | | | |
+
+**Decisiones de arquitectura tomadas al construir 4-7, que aplican también a 8-10:**
+- **Permisos, no rol hardcodeado**: cada acción sensible del backend chequea `User.HasLbPermiso("XXX")`
+  (`Features/PersonasModule/LbClaimsExtensions.cs`, lee el claim `lb_permisos` del JWT), nunca
+  `if (rol.Codigo == "...")`. Nuevo módulo → nuevos códigos de permiso + filas en `lb_rol_permiso`
+  en su propia migración, igual que 4-7.
+- **Header + items** para todo documento multi-producto (Pedido, Entrega EPP, Préstamo, Orden de
+  Compra) — mismo patrón en los 4.
+- **Kardex como única fuente de movimiento de stock**: ningún módulo nuevo debe tocar
+  `lb_stock.cantidad_actual` directo — siempre a través de `IAlmacenKardexService.RegistrarMovimiento`
+  (`AlmacenModule`), pasando `ReferenciaTipo`/`ReferenciaId` para trazabilidad. Ya lo hacen Pedidos
+  (SALIDA), EPP (SALIDA), Préstamo (SALIDA al prestar, INGRESO al devolver) y Compras (INGRESO al
+  recibir).
+- **Códigos correlativos legibles** (`PED-2026-000001`, `PRES-2026-000001`, `OC-2026-000001`) vía
+  `CREATE SEQUENCE` propia por documento — nunca `MAX(id)+1`, que colisiona entre transacciones
+  concurrentes.
+- **Todo o nada al mover stock de salida** (Pedidos.Entregar, Epp.Crear, Prestamo.Crear): se valida
+  disponibilidad de TODOS los ítems antes de mover cualquiera. Entrega/préstamo parcial no existe
+  todavía — el esquema ya lo permite (columnas separadas de solicitado/recibido) para agregarlo
+  después sin migración nueva.
+- **Cargo digital con firma** (EPP, punto 5): pendiente a propósito — depende del wrapper de firma
+  con metadata sobre `app-signature-pad` que `SISTEMA-DE-DISENO.md` (frontend) marca como no
+  construido todavía (sección 3, punto 3 de ese documento). No inventar una versión propia cuando
+  se llegue a Guías de Remisión / Documentos — esperar a que ese componente compartido exista.

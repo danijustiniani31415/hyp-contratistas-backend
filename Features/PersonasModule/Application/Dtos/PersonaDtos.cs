@@ -49,6 +49,18 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public string? MotivoCese { get; set; }
     }
 
+    /// <summary>Fila de la tabla de accesos del detalle de persona — a diferencia de LbAsignacionDto
+    /// (pensado para claims del JWT), esta trae nombres legibles + el Id para poder revocar.</summary>
+    public class AsignacionDetalleDto
+    {
+        public long Id { get; set; }
+        public string RolNombre { get; set; } = null!;
+        public bool EsGlobal { get; set; }
+        public string? ProyectoNombre { get; set; }
+        public string? AlmacenNombre { get; set; }
+        public DateOnly FechaInicio { get; set; }
+    }
+
     public class PersonaDetailDto
     {
         public int Id { get; set; }
@@ -62,7 +74,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public List<VinculoLaboralDto> Vinculos { get; set; } = new();
         public long? UsuarioSistemaId { get; set; }
         public string? EmailLogin { get; set; }
-        public List<LbAsignacionDto> Asignaciones { get; set; } = new();
+        public List<AsignacionDetalleDto> Asignaciones { get; set; } = new();
     }
 
     /// <summary>Cierra el vínculo vigente (si hay) y abre uno nuevo — nunca se pisa el anterior.</summary>
@@ -75,11 +87,16 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public string? MotivoCeseAnterior { get; set; }
     }
 
-    /// <summary>Crea el usuario_sistema (o lo reactiva si ya existía y estaba inactivo).</summary>
+    /// <summary>
+    /// Da acceso al sistema a una persona (o lo reactiva si ya tenía uno inactivo). Sin
+    /// contraseña a propósito — mismo patrón de "invitación" que Odoo/Google Workspace/GitHub:
+    /// el admin nunca escribe ni conoce la contraseña de otra persona. El sistema genera una
+    /// interna inutilizable y manda un correo de activación con enlace de un solo uso (mismo
+    /// mecanismo que "olvidé mi contraseña", ver LbAuthService).
+    /// </summary>
     public class CrearUsuarioDto
     {
         public string EmailLogin { get; set; } = null!;
-        public string Password { get; set; } = null!;
     }
 
     public class CatalogoItemDto
@@ -88,13 +105,26 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public string Nombre { get; set; } = null!;
     }
 
+    /// <summary>Rol con su bandera de alcance — el front la usa para exigir Proyecto solo cuando el rol no es global.</summary>
+    public class RolCatalogoItemDto : CatalogoItemDto
+    {
+        public bool EsGlobal { get; set; }
+    }
+
+    /// <summary>Almacén con su proyecto (null = almacén CENTRAL) — el front filtra por el proyecto elegido en la asignación.</summary>
+    public class AlmacenCatalogoItemDto : CatalogoItemDto
+    {
+        public int? ProyectoId { get; set; }
+    }
+
     public class CatalogosPersonasDto
     {
         public List<CatalogoItemDto> TiposVinculo { get; set; } = new();
         public List<CatalogoItemDto> Cargos { get; set; } = new();
         public List<CatalogoItemDto> EmpresasContratistas { get; set; } = new();
-        public List<CatalogoItemDto> Roles { get; set; } = new();
+        public List<RolCatalogoItemDto> Roles { get; set; } = new();
         public List<CatalogoItemDto> Proyectos { get; set; } = new();
+        public List<AlmacenCatalogoItemDto> Almacenes { get; set; } = new();
     }
 
     public class NuevaAsignacionDto

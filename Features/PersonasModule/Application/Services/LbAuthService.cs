@@ -1,11 +1,15 @@
+using System.Security.Cryptography;
 using Abril_Backend.Application.Exceptions;
 using Abril_Backend.Features.PersonasModule.Application.Dtos;
 using Abril_Backend.Features.PersonasModule.Application.Interfaces;
 using Abril_Backend.Features.PersonasModule.Infrastructure.Interfaces;
 using Abril_Backend.Features.PersonasModule.Infrastructure.Models;
 using Abril_Backend.Infrastructure.Data;
+using Abril_Backend.Infrastructure.Interfaces;
+using Abril_Backend.Infrastructure.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Abril_Backend.Features.PersonasModule.Application.Services
 {
@@ -14,15 +18,21 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
         private readonly IDbContextFactory<AppDbContext> _factory;
         private readonly IPasswordHasher<UsuarioSistema> _passwordHasher;
         private readonly ILbJwtService _jwtService;
+        private readonly IEmailService _emailService;
+        private readonly FrontendSettings _frontendSettings;
 
         public LbAuthService(
             IDbContextFactory<AppDbContext> factory,
             IPasswordHasher<UsuarioSistema> passwordHasher,
-            ILbJwtService jwtService)
+            ILbJwtService jwtService,
+            IEmailService emailService,
+            IOptions<FrontendSettings> frontendSettings)
         {
             _factory = factory;
             _passwordHasher = passwordHasher;
             _jwtService = jwtService;
+            _emailService = emailService;
+            _frontendSettings = frontendSettings.Value;
         }
 
         public async Task<LbLoginResponseDto> Login(LbLoginRequestDto request)
@@ -135,6 +145,75 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
             await ctx.SaveChangesAsync();
 
             return await Login(request);
+        }
+
+        public async Task SolicitarReset(LbSolicitarResetDto request)
+        {
+            using var ctx = _factory.CreateDbContext();
+
+            var email = request.Email.Trim().ToLower();
+            var usuario = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.EmailLogin == email && u.Estado == "ACTIVO");
+            // Silencioso a propósito si no existe/no está activo: este endpoint es público
+            // (AllowAnonymous) y no debe servir para averiguar qué correos están registrados.
+            if (usuario is null) return;
+
+            var tokensPrevios = await ctx.LbUsuarioPasswordToken
+                .Where(t => t.UsuarioSistemaId == usuario.Id && !t.Usado)
+                .ToListAsync();
+            foreach (var t in tokensPrevios) t.Usado = true;
+            if (tokensPrevios.Count > 0) await ctx.SaveChangesAsync();
+
+            var token = GenerarToken();
+            ctx.LbUsuarioPasswordToken.Add(new LbUsuarioPasswordToken
+            {
+                UsuarioSistemaId = usuario.Id,
+                Token = token,
+                ExpiraEn = DateTime.UtcNow.AddHours(2),
+                Usado = false,
+                CreadoEn = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+
+            var link = $"{_frontendSettings.LbSetPasswordUrl}?token={token}";
+            var html = $@"<h2>Restablece tu contraseña</h2>
+<p>Hola, recibimos una solicitud para restablecer tu contraseña en HP Constructores / Las Bravas.</p>
+<p>Haz clic en el siguiente enlace para crear una nueva contraseña:</p>
+<a href='{link}' style='background:#1E3A5F;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;margin:16px 0'>Restablecer contraseña</a>
+<p>Este enlace expira en 2 horas.</p>
+<p>Si no solicitaste este cambio, ignora este correo.</p>";
+
+            await _emailService.SendAsync(
+                to: new List<string> { usuario.EmailLogin },
+                subject: "Restablece tu contraseña - HP Constructores Generales",
+                body: html,
+                isHtml: true);
+        }
+
+        public async Task ResetPassword(LbResetPasswordDto request)
+        {
+            using var ctx = _factory.CreateDbContext();
+
+            if (string.IsNullOrEmpty(request.NuevaPassword) || request.NuevaPassword.Length < 6)
+                throw new AbrilException("La contraseña debe tener al menos 6 caracteres.", 400);
+
+            var token = await ctx.LbUsuarioPasswordToken
+                .FirstOrDefaultAsync(t => t.Token == request.Token && !t.Usado && t.ExpiraEn > DateTime.UtcNow)
+                ?? throw new AbrilException("Enlace inválido o expirado.", 400);
+
+            var usuario = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.Id == token.UsuarioSistemaId)
+                ?? throw new AbrilException("Usuario no encontrado.", 404);
+
+            usuario.PasswordHash = _passwordHasher.HashPassword(usuario, request.NuevaPassword);
+            token.Usado = true;
+
+            await ctx.SaveChangesAsync();
+        }
+
+        /// <summary>Token opaco de un solo uso — 64 bytes aleatorios, base64url (sin +, /, =).</summary>
+        private static string GenerarToken()
+        {
+            var bytes = RandomNumberGenerator.GetBytes(64);
+            return Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").Replace("=", "");
         }
     }
 }

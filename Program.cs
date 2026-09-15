@@ -16,6 +16,12 @@ using Abril_Backend.Infrastructure.Services;
 using Abril_Backend.Application.Interfaces;
 using Abril_Backend.Features.AuthModule;
 using Abril_Backend.Features.PersonasModule;
+using Abril_Backend.Features.CatalogoModule;
+using Abril_Backend.Features.AlmacenModule;
+using Abril_Backend.Features.PedidosModule;
+using Abril_Backend.Features.EppModule;
+using Abril_Backend.Features.HerramientasModule;
+using Abril_Backend.Features.ComprasModule;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Identity;
@@ -189,6 +195,12 @@ else
 
 builder.Services.AddCostsModule(builder.Configuration);
 builder.Services.AddPersonasModule();
+builder.Services.AddCatalogoModule();
+builder.Services.AddAlmacenModule();
+builder.Services.AddPedidosModule();
+builder.Services.AddEppModule();
+builder.Services.AddHerramientasModule();
+builder.Services.AddComprasModule();
 builder.Services.AddContractorsModule();
 builder.Services.AddConfigurationModule();
 builder.Services.AddAuthModule(builder.Configuration);
@@ -309,6 +321,24 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
+    // Endpoints [AllowAnonymous] de lb-auth (login, solicitar-reset, reset-password): sin esto,
+    // login queda abierto a fuerza bruta de contraseñas, y los otros dos a spam de correos /
+    // intentos de token sin freno (aunque el token de 64 bytes aleatorios ya hace inviable
+    // adivinarlo). Mismo límite que sunat-ruc: 5/hora por IP, sin límite si ya hay sesión.
+    options.AddPolicy("lb-auth", httpContext =>
+    {
+        if (httpContext.User.Identity?.IsAuthenticated == true)
+            return RateLimitPartition.GetNoLimiter("authenticated");
+
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromHours(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
     options.RejectionStatusCode = 429;
     options.OnRejected = async (context, _) =>
     {
@@ -360,7 +390,7 @@ builder.Services.AddSwaggerGen(c =>
     // endpoints nuevos de Las Bravas (lb-auth). En vez de perseguir cada bug de Swagger en
     // código que no se va a usar, se excluye de la documentación cualquier acción que no
     // pertenezca a un namespace propio de Las Bravas (agregar el nuevo módulo acá cuando se cree).
-    var namespacesLasBravas = new[] { "Abril_Backend.Features.PersonasModule" };
+    var namespacesLasBravas = new[] { "Abril_Backend.Features.PersonasModule", "Abril_Backend.Features.CatalogoModule", "Abril_Backend.Features.AlmacenModule", "Abril_Backend.Features.PedidosModule", "Abril_Backend.Features.EppModule", "Abril_Backend.Features.HerramientasModule", "Abril_Backend.Features.ComprasModule" };
     c.DocInclusionPredicate((docName, apiDesc) =>
     {
         var controllerNamespace = (apiDesc.ActionDescriptor
