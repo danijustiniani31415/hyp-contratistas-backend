@@ -50,5 +50,6 @@ jobs:
               -e ASPNETCORE_ENVIRONMENT=Production \
               -e ASPNETCORE_URLS=http://127.0.0.1:8080 \
               -v /opt/hyp-contratistas/appsettings.Production.json:/app/appsettings.Production.json:ro \
+              -v /opt/hyp-contratistas/certificados-sunat:/app/certificados-sunat:ro \
               --log-opt max-size=10m --log-opt max-file=5 \
               ${{ env.IMAGE_NAME }}:latest
