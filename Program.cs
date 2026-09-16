@@ -22,6 +22,7 @@ using Abril_Backend.Features.PedidosModule;
 using Abril_Backend.Features.EppModule;
 using Abril_Backend.Features.HerramientasModule;
 using Abril_Backend.Features.ComprasModule;
+using Abril_Backend.Features.GuiasRemisionModule;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Identity;
@@ -201,6 +202,7 @@ builder.Services.AddPedidosModule();
 builder.Services.AddEppModule();
 builder.Services.AddHerramientasModule();
 builder.Services.AddComprasModule();
+builder.Services.AddGuiasRemisionModule(builder.Configuration);
 builder.Services.AddContractorsModule();
 builder.Services.AddConfigurationModule();
 builder.Services.AddAuthModule(builder.Configuration);
@@ -390,7 +392,7 @@ builder.Services.AddSwaggerGen(c =>
     // endpoints nuevos de Las Bravas (lb-auth). En vez de perseguir cada bug de Swagger en
     // código que no se va a usar, se excluye de la documentación cualquier acción que no
     // pertenezca a un namespace propio de Las Bravas (agregar el nuevo módulo acá cuando se cree).
-    var namespacesLasBravas = new[] { "Abril_Backend.Features.PersonasModule", "Abril_Backend.Features.CatalogoModule", "Abril_Backend.Features.AlmacenModule", "Abril_Backend.Features.PedidosModule", "Abril_Backend.Features.EppModule", "Abril_Backend.Features.HerramientasModule", "Abril_Backend.Features.ComprasModule" };
+    var namespacesLasBravas = new[] { "Abril_Backend.Features.PersonasModule", "Abril_Backend.Features.CatalogoModule", "Abril_Backend.Features.AlmacenModule", "Abril_Backend.Features.PedidosModule", "Abril_Backend.Features.EppModule", "Abril_Backend.Features.HerramientasModule", "Abril_Backend.Features.ComprasModule", "Abril_Backend.Features.GuiasRemisionModule" };
     c.DocInclusionPredicate((docName, apiDesc) =>
     {
         var controllerNamespace = (apiDesc.ActionDescriptor

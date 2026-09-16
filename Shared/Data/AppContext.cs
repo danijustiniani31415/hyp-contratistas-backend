@@ -43,6 +43,7 @@ using Abril_Backend.Features.PedidosModule.Infrastructure.Models;
 using Abril_Backend.Features.EppModule.Infrastructure.Models;
 using Abril_Backend.Features.HerramientasModule.Infrastructure.Models;
 using Abril_Backend.Features.ComprasModule.Infrastructure.Models;
+using Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models;
 
 namespace Abril_Backend.Infrastructure.Data
 {
@@ -94,6 +95,9 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<OrdenCompra> OrdenCompra { get; set; }
         public DbSet<OrdenCompraItem> OrdenCompraItem { get; set; }
         public DbSet<OrdenCompraRecepcion> OrdenCompraRecepcion { get; set; }
+        // ── Las Bravas / HP Constructores: Guías de Remisión (Fase 3) ──
+        public DbSet<GuiaRemision> GuiaRemision { get; set; }
+        public DbSet<GuiaRemisionItem> GuiaRemisionItem { get; set; }
 
         public DbSet<Area> Area { get; set; }
         public DbSet<SubArea> SubArea { get; set; }

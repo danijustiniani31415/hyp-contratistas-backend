@@ -101,9 +101,11 @@ notificaciones.
 5. EPP (tallas, entrega individual, cargo digital — cargo digital con firma queda pendiente, ver sección 11)
 6. Herramientas y Equipos (préstamo, hoja de ruta de retiro)
 
-**FASE 3 — Cadena completa** 🔧 en curso — punto 7 listo, 8/9/10 pendientes
+**FASE 3 — Cadena completa** 🔧 en curso — puntos 7 listo, 8 en calibración, 9/10 pendientes
 7. Compras (orden de compra cuando no hay stock) ✅ 2026-09-15
-8. Guías de Remisión SUNAT ⬜
+8. Guías de Remisión SUNAT — emisión electrónica real (sin OSE) 🔧 2026-09-15: código completo
+   (modelo, firma XMLDSig, cliente SOAP a SUNAT), pendiente certificado digital real + primera
+   prueba contra Beta para calibrar el XML exacto que SUNAT acepta (ver sección 11)
 9. Motor de Alertas y Notificaciones (el modelo de reglas se diseña ya en la sección 5, para no
    rehacer el modelo de roles cuando llegue esta fase) ⬜
 10. Documentos/SharePoint (bibliotecas enlazadas) ⬜
@@ -552,6 +554,14 @@ tabla entera — otros productos siguen registrando movimientos en paralelo sin 
 conexión del celular se cae a mitad de la transacción, Postgres la revierte sola (no queda un
 movimiento sin su descuento de stock, o viceversa).
 
+**[CORREGIDO 2026-09-16]** `Database.BeginTransactionAsync()` a mano choca con
+`EnableRetryOnFailure` de Npgsql (reintentos automáticos ya configurados en este proyecto) — la
+estrategia de reintentos no sabe cómo reintentar una transacción abierta manualmente. Se descubrió
+al probar Guías de Remisión de punta a punta (primer flujo de Fase 3 probado con datos reales), pero
+afectaba a los 4 módulos que ya usaban `RegistrarMovimiento` (Pedidos, EPP, Préstamos, Compras) —
+como es un único servicio compartido (`AlmacenKardexService`), arreglarlo ahí lo arregla para todos.
+Fix: envolver la transacción completa en `ctx.Database.CreateExecutionStrategy().ExecuteAsync(...)`.
+
 ## 8. PRIMER PROMPT SUGERIDO PARA CLAUDE CODE
 
 ```
@@ -621,7 +631,7 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
 | 5 | EPP | `EppModule` | `/epp` | `2026-09-15_lb_entrega_epp.sql` | `EPP_ENTREGAR` |
 | 6 | Herramientas y Equipos | `HerramientasModule` | `/herramientas` | `2026-09-15_lb_prestamo_herramienta.sql` | `HERRAMIENTA_PRESTAR`, `HERRAMIENTA_DEVOLVER` |
 | 7 | Compras | `ComprasModule` | `/compras` | `2026-09-15_lb_compras.sql` | `COMPRA_CREAR`, `COMPRA_RECIBIR` |
-| 8 | Guías de Remisión SUNAT | ⬜ no empezado | | | |
+| 8 | Guías de Remisión SUNAT | 🔧 `GuiasRemisionModule` (backend + API REST/OAuth2 de SUNAT listos, pendiente certificado + calibrar contra el ambiente de pruebas) | `/guias-remision` | `2026-09-15_lb_guias_remision.sql` | `GUIA_REMISION_CREAR`, `GUIA_REMISION_VER`, `GUIA_REMISION_ENVIAR` |
 | 9 | Alertas/Notificaciones | ⬜ no empezado (modelo en sección 5, sin tablas creadas) | | | |
 | 10 | Documentos/SharePoint | ⬜ no empezado | | | |
 
@@ -648,3 +658,31 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
   con metadata sobre `app-signature-pad` que `SISTEMA-DE-DISENO.md` (frontend) marca como no
   construido todavía (sección 3, punto 3 de ese documento). No inventar una versión propia cuando
   se llegue a Guías de Remisión / Documentos — esperar a que ese componente compartido exista.
+
+**Guías de Remisión (punto 8) — pendientes reales antes de poder emitir en serio:**
+- **[CORREGIDO 2026-09-15]** La primera versión de este módulo usaba el `billService` SOAP viejo
+  (WS-Security + usuario/clave SOL) — el usuario confirmó que SUNAT ya migró GRE a una **API REST
+  nueva con OAuth2** (portal SOL > "credenciales API" > `client_id`/`client_secret`, + usuario/clave
+  SOL para el grant `password`). Se reescribió todo el cliente (`SunatGreRestClient.cs`): 1) POST a
+  `api-seguridad.sunat.gob.pe` para el token, 2) POST del ZIP+hash SHA-256 a
+  `api-cpe.sunat.gob.pe/v1/contribuyente/gem/comprobantes/{filename}` (devuelve un `numTicket`,
+  SUNAT resuelve async), 3) GET a `.../comprobantes/envios/{numTicket}` hasta que `indCdrGenerado`.
+  La firma XMLDSig del XML sigue igual — lo que cambió es solo el transporte.
+- Certificado digital (.pfx) de persona jurídica para el RUC de HP Constructores Generales — sigue
+  siendo obligatorio (la API nueva no reemplaza la firma del documento). Mientras no se compre uno
+  real, sirve uno autofirmado (openssl) para probar el flujo completo en el ambiente de pruebas.
+- El usuario ya generó `client_id`/`client_secret` (portal SOL) y ya tiene usuario/clave SOL —
+  faltan cargarlos en `appsettings.Local.json` (sección `SunatGre`, gitignored).
+- Host de pruebas usado por defecto: `api-cpe-test.sunat.gob.pe` (`Ambiente: "Beta"`) — SUNAT suele
+  exigir un RUC de homologación propio para este ambiente, no necesariamente el RUC real de la
+  empresa; confirmar con SUNAT si el RUC real responde ahí o si hace falta pedir uno de prueba.
+- Estructura del XML UBL en `GuiaRemisionUblXmlBuilder` y el contrato REST en
+  `SunatGreRestClient`/`ISunatGreClient` están basados en el estándar público y en la especificación
+  OpenAPI de Greenter (implementación ya probada en producción en Perú), pero **no se han validado
+  contra una respuesta real de SUNAT todavía** — normal que el primer envío real requiera 1-2
+  ajustes según lo que devuelva el CDR o el error de validación.
+- `direccion`/`ubigeo` de `lb_almacen`/`lb_proyecto` (columnas nuevas, nullable) deben completarse
+  a mano para el almacén de origen y el destino antes del primer envío real — no hay UI para
+  editarlos todavía (se agregó el schema, no una pantalla).
+- **Anulación (Comunicación de Baja)** no está implementada — es un documento y flujo aparte en
+  SUNAT. El permiso `GUIA_REMISION_ENVIAR` ya contempla esta acción a futuro, pero el endpoint no existe.

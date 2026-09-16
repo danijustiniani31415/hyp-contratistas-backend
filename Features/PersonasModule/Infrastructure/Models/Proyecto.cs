@@ -11,6 +11,9 @@ namespace Abril_Backend.Features.PersonasModule.Infrastructure.Models
         public string? Ubicacion { get; set; }
         public string Estado { get; set; } = "ACTIVO";
         public DateTimeOffset CreadoEn { get; set; }
+        /// <summary>Dirección + ubigeo (catálogo SUNAT) — punto de llegada de la GRE cuando el destino es la obra.</summary>
+        public string? Direccion { get; set; }
+        public string? Ubigeo { get; set; }
 
         public ICollection<Almacen> Almacenes { get; set; } = new List<Almacen>();
     }

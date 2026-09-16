@@ -126,54 +126,63 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                 throw new AbrilException("La cantidad debe ser mayor a cero.", 400);
 
             using var ctx = _factory.CreateDbContext();
-            using var tx = await ctx.Database.BeginTransactionAsync();
 
-            if (!await ctx.Almacen.AnyAsync(a => a.Id == dto.AlmacenId))
-                throw new AbrilException("Almacén no encontrado.", 404);
-            if (!await ctx.Producto.AnyAsync(p => p.Id == dto.ProductoId))
-                throw new AbrilException("Producto no encontrado.", 404);
-
-            // Asegura que exista la fila de stock antes de bloquearla — upsert nativo de Postgres,
-            // aprovecha el UNIQUE(almacen_id, producto_id, talla) de la tabla.
-            await ctx.Database.ExecuteSqlInterpolatedAsync($"""
-                INSERT INTO lb_stock (almacen_id, producto_id, talla, cantidad_actual, actualizado_en)
-                VALUES ({dto.AlmacenId}, {dto.ProductoId}, {dto.Talla}, 0, now())
-                ON CONFLICT (almacen_id, producto_id, talla) DO NOTHING
-                """);
-
-            var cantidadActual = await ctx.Database
-                .SqlQuery<decimal>($"""
-                    SELECT cantidad_actual AS "Value" FROM lb_stock
-                    WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla}
-                    FOR UPDATE
-                    """)
-                .SingleAsync();
-
-            if (dto.TipoMovimiento == "SALIDA" && cantidadActual < dto.Cantidad)
-                throw new AbrilException($"Stock insuficiente — quedan {cantidadActual} y se pidieron {dto.Cantidad}.", 400);
-
-            ctx.Movimiento.Add(new Movimiento
+            // [CORREGIDO] Npgsql tiene reintentos automáticos habilitados (EnableRetryOnFailure),
+            // y esa estrategia de ejecución no permite una transacción abierta a mano
+            // (Database.BeginTransactionAsync) porque no sabría cómo reintentarla completa si falla
+            // a la mitad — hay que envolver TODO (transacción + queries) en CreateExecutionStrategy().
+            var strategy = ctx.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                AlmacenId = dto.AlmacenId,
-                ProductoId = dto.ProductoId,
-                Talla = dto.Talla,
-                TipoMovimiento = dto.TipoMovimiento,
-                Cantidad = dto.Cantidad,
-                CostoUnitario = dto.CostoUnitario,
-                ReferenciaTipo = dto.ReferenciaTipo,
-                ReferenciaId = dto.ReferenciaId,
-                UsuarioSistemaId = usuarioSistemaId,
-                CreadoEn = DateTimeOffset.UtcNow,
+                using var tx = await ctx.Database.BeginTransactionAsync();
+
+                if (!await ctx.Almacen.AnyAsync(a => a.Id == dto.AlmacenId))
+                    throw new AbrilException("Almacén no encontrado.", 404);
+                if (!await ctx.Producto.AnyAsync(p => p.Id == dto.ProductoId))
+                    throw new AbrilException("Producto no encontrado.", 404);
+
+                // Asegura que exista la fila de stock antes de bloquearla — upsert nativo de
+                // Postgres, aprovecha el UNIQUE(almacen_id, producto_id, talla) de la tabla.
+                await ctx.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO lb_stock (almacen_id, producto_id, talla, cantidad_actual, actualizado_en)
+                    VALUES ({dto.AlmacenId}, {dto.ProductoId}, {dto.Talla}, 0, now())
+                    ON CONFLICT (almacen_id, producto_id, talla) DO NOTHING
+                    """);
+
+                var cantidadActual = await ctx.Database
+                    .SqlQuery<decimal>($"""
+                        SELECT cantidad_actual AS "Value" FROM lb_stock
+                        WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla}
+                        FOR UPDATE
+                        """)
+                    .SingleAsync();
+
+                if (dto.TipoMovimiento == "SALIDA" && cantidadActual < dto.Cantidad)
+                    throw new AbrilException($"Stock insuficiente — quedan {cantidadActual} y se pidieron {dto.Cantidad}.", 400);
+
+                ctx.Movimiento.Add(new Movimiento
+                {
+                    AlmacenId = dto.AlmacenId,
+                    ProductoId = dto.ProductoId,
+                    Talla = dto.Talla,
+                    TipoMovimiento = dto.TipoMovimiento,
+                    Cantidad = dto.Cantidad,
+                    CostoUnitario = dto.CostoUnitario,
+                    ReferenciaTipo = dto.ReferenciaTipo,
+                    ReferenciaId = dto.ReferenciaId,
+                    UsuarioSistemaId = usuarioSistemaId,
+                    CreadoEn = DateTimeOffset.UtcNow,
+                });
+                await ctx.SaveChangesAsync();
+
+                var signo = dto.TipoMovimiento == "INGRESO" ? 1 : -1;
+                await ctx.Database.ExecuteSqlInterpolatedAsync($"""
+                    UPDATE lb_stock SET cantidad_actual = cantidad_actual + ({signo} * {dto.Cantidad}), actualizado_en = now()
+                    WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla}
+                    """);
+
+                await tx.CommitAsync();
             });
-            await ctx.SaveChangesAsync();
-
-            var signo = dto.TipoMovimiento == "INGRESO" ? 1 : -1;
-            await ctx.Database.ExecuteSqlInterpolatedAsync($"""
-                UPDATE lb_stock SET cantidad_actual = cantidad_actual + ({signo} * {dto.Cantidad}), actualizado_en = now()
-                WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla}
-                """);
-
-            await tx.CommitAsync();
         }
 
         public async Task AjustarUmbrales(AjustarUmbralesDto dto)
