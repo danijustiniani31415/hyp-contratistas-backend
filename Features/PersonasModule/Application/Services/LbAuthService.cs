@@ -61,12 +61,14 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 .ToListAsync();
 
             var rolIds = asignaciones.Select(a => a.RolId).Distinct().ToList();
-            var permisos = await ctx.RolPermiso
+            var permisosPorRol = await ctx.RolPermiso
                 .Where(rp => rolIds.Contains(rp.RolId))
                 .Include(rp => rp.Permiso)
-                .Select(rp => rp.Permiso!.Codigo)
-                .Distinct()
+                .Select(rp => new { rp.RolId, Codigo = rp.Permiso!.Codigo })
                 .ToListAsync();
+            var permisosPorRolLookup = permisosPorRol
+                .GroupBy(x => x.RolId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Codigo).ToList());
 
             usuario.UltimoAcceso = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
@@ -75,15 +77,19 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
             {
                 UsuarioSistemaId = usuario.Id,
                 Email = usuario.EmailLogin,
-                NombreCompleto = $"{usuario.Persona!.Nombres} {usuario.Persona.Apellidos}",
+                NombreCompleto = $"{usuario.Persona!.Apellidos} {usuario.Persona.Nombres}",
+                // EsGlobal es por asignación (ProyectoId null en ESTA fila), no por rol — el mismo
+                // rol puede ser global para una persona y de un solo proyecto para otra (ej.
+                // "Logística" en Lima vs "Logística" en Las Bravas).
                 Asignaciones = asignaciones.Select(a => new LbAsignacionDto
                 {
                     RolCodigo = a.Rol!.Codigo,
-                    EsGlobal = a.Rol.EsGlobal,
+                    EsGlobal = a.ProyectoId == null,
                     ProyectoId = a.ProyectoId,
                     AlmacenId = a.AlmacenId,
+                    Permisos = permisosPorRolLookup.GetValueOrDefault(a.RolId, new List<string>()),
                 }).ToList(),
-                Permisos = permisos,
+                Permisos = permisosPorRol.Select(x => x.Codigo).Distinct().ToList(),
             };
 
             response.Token = _jwtService.GenerateToken(response);
@@ -97,8 +103,8 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
             if (await ctx.UsuarioSistema.AnyAsync())
                 throw new AbrilException("Ya existe al menos un usuario — el bootstrap solo corre en una base vacía.", 409);
 
-            var rolAdmin = await ctx.Rol.FirstOrDefaultAsync(r => r.Codigo == "GERENTE_GENERAL")
-                ?? throw new AbrilException("No existe el rol GERENTE_GENERAL — corre el DDL de la sección 4 primero.", 500);
+            var rolAdmin = await ctx.Rol.FirstOrDefaultAsync(r => r.Codigo == "ADMIN")
+                ?? throw new AbrilException("No existe el rol ADMIN — corre el DDL de la sección 4 primero.", 500);
 
             var tipoPlanilla = await ctx.TipoVinculo.FirstOrDefaultAsync(t => t.Codigo == "PLANILLA")
                 ?? throw new AbrilException("No existe el tipo de vínculo PLANILLA.", 500);

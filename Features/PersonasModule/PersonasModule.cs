@@ -20,6 +20,9 @@ namespace Abril_Backend.Features.PersonasModule
             services.AddScoped<ILbAuthService, LbAuthService>();
             services.AddScoped<IPersonaService, PersonaService>();
             services.AddScoped<IRolPermisoService, RolPermisoService>();
+            services.AddScoped<ITareoService, TareoService>();
+            services.AddScoped<ICatalogoValorService, CatalogoValorService>();
+            services.AddScoped<IPlanillaCalculoService, PlanillaCalculoService>();
             return services;
         }
     }

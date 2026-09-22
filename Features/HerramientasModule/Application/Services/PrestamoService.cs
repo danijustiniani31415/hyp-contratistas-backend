@@ -4,6 +4,7 @@ using Abril_Backend.Features.AlmacenModule.Application.Interfaces;
 using Abril_Backend.Features.HerramientasModule.Application.Dtos;
 using Abril_Backend.Features.HerramientasModule.Application.Interfaces;
 using Abril_Backend.Features.HerramientasModule.Infrastructure.Models;
+using Abril_Backend.Features.PersonasModule;
 using Abril_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -99,7 +100,7 @@ namespace Abril_Backend.Features.HerramientasModule.Application.Services
             return await BuildDetail(ctx, prestamo.Id);
         }
 
-        public async Task<PrestamoListResponseDto> List(bool soloAbiertos, int page, int pageSize)
+        public async Task<PrestamoListResponseDto> List(string? search, bool soloAbiertos, HashSet<int>? proyectosPermitidos, int page, int pageSize)
         {
             using var ctx = _factory.CreateDbContext();
 
@@ -109,8 +110,20 @@ namespace Abril_Backend.Features.HerramientasModule.Application.Services
                 .Include(p => p.Items)
                 .AsQueryable();
 
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLower();
+                query = query.Where(p =>
+                    p.Codigo.ToLower().Contains(s) ||
+                    (p.Persona!.Nombres + " " + p.Persona.Apellidos).ToLower().Contains(s) ||
+                    (p.Persona.Apellidos + " " + p.Persona.Nombres).ToLower().Contains(s));
+            }
             if (soloAbiertos)
                 query = query.Where(p => p.Items.Any(i => i.Estado == "PRESTADO"));
+            // null = acceso global. Con valor: solo préstamos de esos proyectos (o sin proyecto
+            // asignado, que cuenta como "central"/sin sede específica).
+            if (proyectosPermitidos != null)
+                query = query.Where(p => p.ProyectoId != null && proyectosPermitidos.Contains(p.ProyectoId.Value));
 
             var total = await query.CountAsync();
 
@@ -122,7 +135,7 @@ namespace Abril_Backend.Features.HerramientasModule.Application.Services
                 {
                     Id = p.Id,
                     Codigo = p.Codigo,
-                    PersonaNombre = p.Persona!.Nombres + " " + p.Persona.Apellidos,
+                    PersonaNombre = p.Persona!.Apellidos + " " + p.Persona.Nombres,
                     AlmacenNombre = p.Almacen!.Nombre,
                     CantidadItems = p.Items.Count,
                     CantidadPendientes = p.Items.Count(i => i.Estado == "PRESTADO"),
@@ -147,7 +160,7 @@ namespace Abril_Backend.Features.HerramientasModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
-        public async Task<PrestamoDetailDto> DevolverItem(long prestamoId, long itemId, DevolverItemDto dto, long devueltoPorId)
+        public async Task<PrestamoDetailDto> DevolverItem(long prestamoId, long itemId, DevolverItemDto dto, long devueltoPorId, LbScopeProyectos scope)
         {
             if (!EstadosDevolucionValidos.Contains(dto.Estado))
                 throw new AbrilException("Estado inválido — debe ser DEVUELTO, PERDIDO o DANADO.", 400);
@@ -155,6 +168,11 @@ namespace Abril_Backend.Features.HerramientasModule.Application.Services
             using var ctx = _factory.CreateDbContext();
             var prestamo = await ctx.Prestamo.FirstOrDefaultAsync(p => p.Id == prestamoId)
                 ?? throw new AbrilException("Préstamo no encontrado.", 404);
+
+            // Sin proyecto asignado = "central", visible para todos con el permiso; con proyecto,
+            // exige que el scope del usuario lo cubra.
+            if (prestamo.ProyectoId.HasValue && !scope.Permite(prestamo.ProyectoId.Value))
+                throw new AbrilException("No tienes permiso para registrar devoluciones de este proyecto.", 403);
 
             var item = await ctx.PrestamoItem.FirstOrDefaultAsync(i => i.Id == itemId && i.PrestamoId == prestamoId)
                 ?? throw new AbrilException("Ítem del préstamo no encontrado.", 404);
@@ -204,9 +222,9 @@ namespace Abril_Backend.Features.HerramientasModule.Application.Services
                 Codigo = prestamo.Codigo,
                 AlmacenNombre = prestamo.Almacen!.Nombre,
                 PersonaId = prestamo.PersonaId,
-                PersonaNombre = $"{prestamo.Persona!.Nombres} {prestamo.Persona.Apellidos}",
+                PersonaNombre = $"{prestamo.Persona!.Apellidos} {prestamo.Persona.Nombres}",
                 ProyectoNombre = prestamo.Proyecto?.Nombre,
-                PrestadoPorNombre = $"{prestamo.PrestadoPor!.Persona!.Nombres} {prestamo.PrestadoPor.Persona.Apellidos}",
+                PrestadoPorNombre = $"{prestamo.PrestadoPor!.Persona!.Apellidos} {prestamo.PrestadoPor.Persona.Nombres}",
                 FechaDevolucionEstimada = prestamo.FechaDevolucionEstimada,
                 Observacion = prestamo.Observacion,
                 CreadoEn = prestamo.CreadoEn,
@@ -220,7 +238,7 @@ namespace Abril_Backend.Features.HerramientasModule.Application.Services
                     Cantidad = i.Cantidad,
                     Estado = i.Estado,
                     DevueltoPorNombre = i.DevueltoPor?.Persona != null
-                        ? $"{i.DevueltoPor.Persona.Nombres} {i.DevueltoPor.Persona.Apellidos}" : null,
+                        ? $"{i.DevueltoPor.Persona.Apellidos} {i.DevueltoPor.Persona.Nombres}" : null,
                     FechaDevolucion = i.FechaDevolucion,
                     ObservacionDevolucion = i.ObservacionDevolucion,
                 }).ToList(),

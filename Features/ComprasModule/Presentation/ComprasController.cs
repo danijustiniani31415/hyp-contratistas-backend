@@ -55,9 +55,13 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
         }
 
         [HttpGet("ordenes")]
-        public async Task<IActionResult> List([FromQuery] string? estado, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? estado, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            try { return Ok(await _service.List(estado, page, pageSize)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("COMPRA_CREAR");
+                return Ok(await _service.List(search, estado, scope.EsGlobal ? null : scope.ProyectoIds, page, pageSize));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -75,7 +79,11 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
         {
             if (!User.HasLbPermiso("COMPRA_RECIBIR"))
                 return StatusCode(403, new { message = "No tienes permiso para registrar recepciones." });
-            try { return Ok(await _service.RecibirItem(id, itemId, dto, CurrentUsuarioSistemaId)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("COMPRA_RECIBIR");
+                return Ok(await _service.RecibirItem(id, itemId, dto, CurrentUsuarioSistemaId, scope));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -85,7 +93,11 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
         {
             if (!User.HasLbPermiso("COMPRA_CREAR"))
                 return StatusCode(403, new { message = "No tienes permiso para cancelar órdenes de compra." });
-            try { return Ok(await _service.Cancelar(id)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("COMPRA_CREAR");
+                return Ok(await _service.Cancelar(id, scope));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }

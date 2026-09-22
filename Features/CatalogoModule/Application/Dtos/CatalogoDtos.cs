@@ -22,8 +22,14 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string CategoriaTipo { get; set; } = null!;
         public string UnidadMedida { get; set; } = null!;
         public bool RequiereTalla { get; set; }
+        public string? TipoTalla { get; set; }
         public bool EsRetornable { get; set; }
         public bool Activo { get; set; }
+    }
+
+    public class TallaDto
+    {
+        public string Valor { get; set; } = null!;
     }
 
     public class ProductoListResponseDto
@@ -45,6 +51,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string CategoriaNombre { get; set; } = null!;
         public string UnidadMedida { get; set; } = null!;
         public bool RequiereTalla { get; set; }
+        public string? TipoTalla { get; set; }
         public bool EsRetornable { get; set; }
         public bool Activo { get; set; }
     }
@@ -57,6 +64,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public int CategoriaId { get; set; }
         public string UnidadMedida { get; set; } = null!;
         public bool RequiereTalla { get; set; }
+        public string? TipoTalla { get; set; }
         public bool EsRetornable { get; set; }
     }
 

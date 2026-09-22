@@ -101,7 +101,7 @@ namespace Abril_Backend.Features.EppModule.Application.Services
             return await BuildDetail(ctx, entrega.Id);
         }
 
-        public async Task<EntregaEppListResponseDto> List(int? personaId, int page, int pageSize)
+        public async Task<EntregaEppListResponseDto> List(string? search, int? personaId, HashSet<int>? proyectosPermitidos, int page, int pageSize)
         {
             using var ctx = _factory.CreateDbContext();
 
@@ -112,7 +112,17 @@ namespace Abril_Backend.Features.EppModule.Application.Services
                 .Include(e => e.Items)
                 .AsQueryable();
 
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLower();
+                query = query.Where(e =>
+                    (e.Persona!.Nombres + " " + e.Persona.Apellidos).ToLower().Contains(s) ||
+                    (e.Persona.Apellidos + " " + e.Persona.Nombres).ToLower().Contains(s));
+            }
             if (personaId.HasValue) query = query.Where(e => e.PersonaId == personaId.Value);
+            // La entrega no tiene proyecto propio — se filtra por el proyecto de SU almacén.
+            if (proyectosPermitidos != null)
+                query = query.Where(e => e.Almacen!.ProyectoId != null && proyectosPermitidos.Contains(e.Almacen.ProyectoId.Value));
 
             var total = await query.CountAsync();
 
@@ -123,9 +133,9 @@ namespace Abril_Backend.Features.EppModule.Application.Services
                 .Select(e => new EntregaEppListItemDto
                 {
                     Id = e.Id,
-                    PersonaNombre = e.Persona!.Nombres + " " + e.Persona.Apellidos,
+                    PersonaNombre = e.Persona!.Apellidos + " " + e.Persona.Nombres,
                     AlmacenNombre = e.Almacen!.Nombre,
-                    EntregadoPorNombre = e.EntregadoPor!.Persona!.Nombres + " " + e.EntregadoPor.Persona.Apellidos,
+                    EntregadoPorNombre = e.EntregadoPor!.Persona!.Apellidos + " " + e.EntregadoPor.Persona.Nombres,
                     CantidadItems = e.Items.Count,
                     CreadoEn = e.CreadoEn,
                 })
@@ -161,9 +171,9 @@ namespace Abril_Backend.Features.EppModule.Application.Services
             {
                 Id = entrega.Id,
                 PersonaId = entrega.PersonaId,
-                PersonaNombre = $"{entrega.Persona!.Nombres} {entrega.Persona.Apellidos}",
+                PersonaNombre = $"{entrega.Persona!.Apellidos} {entrega.Persona.Nombres}",
                 AlmacenNombre = entrega.Almacen!.Nombre,
-                EntregadoPorNombre = $"{entrega.EntregadoPor!.Persona!.Nombres} {entrega.EntregadoPor.Persona.Apellidos}",
+                EntregadoPorNombre = $"{entrega.EntregadoPor!.Persona!.Apellidos} {entrega.EntregadoPor.Persona.Nombres}",
                 Observacion = entrega.Observacion,
                 CreadoEn = entrega.CreadoEn,
                 Items = entrega.Items.Select(i => new EntregaEppItemDetailDto

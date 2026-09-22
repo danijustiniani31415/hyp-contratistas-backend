@@ -35,6 +35,14 @@ namespace Abril_Backend.Features.CatalogoModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpGet("tallas")]
+        public async Task<IActionResult> ListTallas([FromQuery] string tipo)
+        {
+            try { return Ok(await _service.ListTallas(tipo)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpGet("productos")]
         public async Task<IActionResult> ListProductos([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {

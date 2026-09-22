@@ -4,8 +4,12 @@ using Abril_Backend.Features.AlmacenModule.Application.Interfaces;
 using Abril_Backend.Features.PedidosModule.Application.Dtos;
 using Abril_Backend.Features.PedidosModule.Application.Interfaces;
 using Abril_Backend.Features.PedidosModule.Infrastructure.Models;
+using Abril_Backend.Features.PersonasModule;
 using Abril_Backend.Infrastructure.Data;
+using Abril_Backend.Infrastructure.Interfaces;
+using Abril_Backend.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Abril_Backend.Features.PedidosModule.Application.Services
 {
@@ -13,11 +17,82 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
     {
         private readonly IDbContextFactory<AppDbContext> _factory;
         private readonly IAlmacenKardexService _almacenService;
+        private readonly IEmailService _emailService;
+        private readonly FrontendSettings _frontendSettings;
 
-        public PedidoService(IDbContextFactory<AppDbContext> factory, IAlmacenKardexService almacenService)
+        public PedidoService(
+            IDbContextFactory<AppDbContext> factory,
+            IAlmacenKardexService almacenService,
+            IEmailService emailService,
+            IOptions<FrontendSettings> frontendSettings)
         {
             _factory = factory;
             _almacenService = almacenService;
+            _emailService = emailService;
+            _frontendSettings = frontendSettings.Value;
+        }
+
+        /// <summary>
+        /// A quién avisar por correo de un evento de este pedido: PEDIDO_APROBAR para pedidos
+        /// nuevos (gerentes/logística con ese permiso, global o del proyecto del pedido), o el
+        /// propio solicitante cuando se aprueba/rechaza/entrega. Resuelve por asignación vigente,
+        /// mismo criterio de scope que LbClaimsExtensions.GetProyectosPermitidos — sin depender de
+        /// un rol de nombre fijo, para no romperse si el usuario reorganiza roles desde el frontend.
+        /// </summary>
+        private static async Task<List<string>> GetEmailsConPermiso(AppDbContext ctx, string codigoPermiso, int proyectoId)
+        {
+            var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
+            var rolIdsConPermiso = ctx.RolPermiso.Where(rp => rp.Permiso!.Codigo == codigoPermiso).Select(rp => rp.RolId);
+
+            return await ctx.UsuarioAsignacion
+                .Where(a => (a.FechaFin == null || a.FechaFin >= hoy) && (a.ProyectoId == null || a.ProyectoId == proyectoId))
+                .Where(a => rolIdsConPermiso.Contains(a.RolId))
+                .Join(ctx.UsuarioSistema.Where(u => u.Estado == "ACTIVO"), a => a.UsuarioSistemaId, u => u.Id, (a, u) => u.EmailLogin)
+                .Distinct()
+                .ToListAsync();
+        }
+
+        public async Task<PedidoDestinatariosDto> GetDestinatarios(int proyectoId)
+        {
+            using var ctx = _factory.CreateDbContext();
+            return new PedidoDestinatariosDto
+            {
+                Visadores = await GetEmailsConPermiso(ctx, "PEDIDO_VISAR", proyectoId),
+                Aprobadores = await GetEmailsConPermiso(ctx, "PEDIDO_APROBAR", proyectoId),
+                Entregadores = await GetEmailsConPermiso(ctx, "PEDIDO_ENTREGAR", proyectoId),
+            };
+        }
+
+        private string? LinkPedidos() =>
+            string.IsNullOrWhiteSpace(_frontendSettings.LbAppUrl) ? null : $"{_frontendSettings.LbAppUrl.TrimEnd('/')}/pedidos";
+
+        private async Task NotificarEvento(string[] destinatarios, string asunto, string mensajeHtml)
+        {
+            if (destinatarios.Length == 0) return;
+            var link = LinkPedidos();
+            var boton = link is null ? "" :
+                $"<a href='{link}' style='background:#0F172A;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;margin:16px 0'>Ver pedidos</a>";
+            var html = $"<h2>{asunto}</h2><p>{mensajeHtml}</p>{boton}";
+            try
+            {
+                await _emailService.SendAsync(to: destinatarios.ToList(), subject: asunto, body: html, isHtml: true);
+            }
+            catch
+            {
+                // Un correo que falla no debe tumbar la operación de negocio (el pedido ya se
+                // guardó) — la notificación es informativa, no parte de la transacción.
+            }
+        }
+
+        private async Task NotificarSolicitante(AppDbContext ctx, long solicitanteUsuarioSistemaId, string asunto, string mensajeHtml)
+        {
+            var email = await ctx.UsuarioSistema
+                .Where(u => u.Id == solicitanteUsuarioSistemaId && u.Estado == "ACTIVO")
+                .Select(u => u.EmailLogin)
+                .FirstOrDefaultAsync();
+            if (email is null) return;
+
+            await NotificarEvento(new[] { email }, asunto, mensajeHtml);
         }
 
         public async Task<PedidoDetailDto> Crear(PedidoCreateDto dto, long solicitanteId)
@@ -56,8 +131,10 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
 
             foreach (var item in dto.Items)
             {
-                if (!await ctx.Producto.AnyAsync(p => p.Id == item.ProductoId))
-                    throw new AbrilException($"Producto {item.ProductoId} no encontrado.", 404);
+                var producto = await ctx.Producto.FindAsync(item.ProductoId)
+                    ?? throw new AbrilException($"Producto {item.ProductoId} no encontrado.", 404);
+                if (producto.RequiereTalla && string.IsNullOrWhiteSpace(item.Talla))
+                    throw new AbrilException($"El producto \"{producto.Nombre}\" requiere indicar la talla.", 400);
 
                 ctx.PedidoItem.Add(new PedidoItem
                 {
@@ -69,10 +146,21 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             }
             await ctx.SaveChangesAsync();
 
-            return await BuildDetail(ctx, pedido.Id);
+            var detalle = await BuildDetail(ctx, pedido.Id);
+
+            // Primer nivel: el Residente visa antes que Gerencia vea el pedido.
+            var visadores = await GetEmailsConPermiso(ctx, "PEDIDO_VISAR", pedido.ProyectoId);
+            await NotificarEvento(
+                visadores.ToArray(),
+                $"Nuevo pedido {detalle.Codigo} pendiente de visado",
+                $"{detalle.SolicitanteNombre} solicitó el pedido <strong>{detalle.Codigo}</strong> " +
+                $"({detalle.Items.Count} producto(s)) en <strong>{detalle.ProyectoNombre}</strong>. " +
+                "Ingresa a Pedidos para visarlo.");
+
+            return detalle;
         }
 
-        public async Task<PedidoListResponseDto> List(string? estado, int? proyectoId, bool soloPropios, long usuarioSistemaId, int page, int pageSize)
+        public async Task<PedidoListResponseDto> List(string? estado, int? proyectoId, bool soloPropios, HashSet<int>? proyectosPermitidos, long usuarioSistemaId, int page, int pageSize)
         {
             using var ctx = _factory.CreateDbContext();
 
@@ -86,6 +174,9 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             if (!string.IsNullOrWhiteSpace(estado)) query = query.Where(p => p.Estado == estado);
             if (proyectoId.HasValue) query = query.Where(p => p.ProyectoId == proyectoId.Value);
             if (soloPropios) query = query.Where(p => p.SolicitanteUsuarioSistemaId == usuarioSistemaId);
+            // null = acceso global (sin restricción). No-null = solo estos proyectos, aunque tenga
+            // PEDIDO_VER_TODOS — ese permiso se lo dieron acotado a su(s) proyecto(s), no a todos.
+            if (proyectosPermitidos != null) query = query.Where(p => proyectosPermitidos.Contains(p.ProyectoId));
 
             var total = await query.CountAsync();
 
@@ -99,7 +190,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     Codigo = p.Codigo,
                     ProyectoNombre = p.Proyecto!.Nombre,
                     AlmacenNombre = p.Almacen!.Nombre,
-                    SolicitanteNombre = p.Solicitante!.Persona!.Nombres + " " + p.Solicitante.Persona.Apellidos,
+                    SolicitanteNombre = p.Solicitante!.Persona!.Apellidos + " " + p.Solicitante.Persona.Nombres,
                     Estado = p.Estado,
                     CantidadItems = p.Items.Count,
                     CreadoEn = p.CreadoEn,
@@ -122,23 +213,35 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
-        public async Task<PedidoDetailDto> Aprobar(long id, long aprobadorId)
+        public async Task<PedidoDetailDto> Visar(long id, long visadorId, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
             var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
 
+            if (!scope.Permite(pedido.ProyectoId))
+                throw new AbrilException("No tienes permiso para visar pedidos de este proyecto.", 403);
             if (pedido.Estado != "PENDIENTE")
-                throw new AbrilException($"Solo se puede aprobar un pedido PENDIENTE (está en {pedido.Estado}).", 400);
+                throw new AbrilException($"Solo se puede visar un pedido PENDIENTE (está en {pedido.Estado}).", 400);
 
-            pedido.Estado = "APROBADO";
-            pedido.AprobadoPorUsuarioSistemaId = aprobadorId;
-            pedido.AprobadoEn = DateTimeOffset.UtcNow;
+            pedido.Estado = "PENDIENTE_GERENTE";
+            pedido.VisadoPorUsuarioSistemaId = visadorId;
+            pedido.VisadoEn = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
 
-            return await BuildDetail(ctx, id);
+            var detalle = await BuildDetail(ctx, id);
+
+            var aprobadores = await GetEmailsConPermiso(ctx, "PEDIDO_APROBAR", pedido.ProyectoId);
+            await NotificarEvento(
+                aprobadores.ToArray(),
+                $"Pedido {detalle.Codigo} visado, pendiente de tu aprobación",
+                $"El pedido <strong>{detalle.Codigo}</strong> ({detalle.Items.Count} producto(s)) en " +
+                $"<strong>{detalle.ProyectoNombre}</strong> ya fue visado por {detalle.VisadoPorNombre} y " +
+                "está listo para tu aprobación final.");
+
+            return detalle;
         }
 
-        public async Task<PedidoDetailDto> Rechazar(long id, long aprobadorId, RechazarPedidoDto dto)
+        public async Task<PedidoDetailDto> RechazarVisado(long id, long visadorId, RechazarPedidoDto dto, LbScopeProyectos scope)
         {
             if (string.IsNullOrWhiteSpace(dto.MotivoRechazo))
                 throw new AbrilException("El motivo de rechazo es obligatorio.", 400);
@@ -146,8 +249,72 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             using var ctx = _factory.CreateDbContext();
             var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
 
+            if (!scope.Permite(pedido.ProyectoId))
+                throw new AbrilException("No tienes permiso para rechazar pedidos de este proyecto.", 403);
             if (pedido.Estado != "PENDIENTE")
-                throw new AbrilException($"Solo se puede rechazar un pedido PENDIENTE (está en {pedido.Estado}).", 400);
+                throw new AbrilException($"Solo se puede rechazar en visado un pedido PENDIENTE (está en {pedido.Estado}).", 400);
+
+            pedido.Estado = "RECHAZADO";
+            pedido.MotivoRechazo = dto.MotivoRechazo;
+            pedido.VisadoPorUsuarioSistemaId = visadorId;
+            pedido.VisadoEn = DateTimeOffset.UtcNow;
+            await ctx.SaveChangesAsync();
+
+            var detalle = await BuildDetail(ctx, id);
+            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                $"Tu pedido {detalle.Codigo} fue rechazado",
+                $"Tu pedido <strong>{detalle.Codigo}</strong> fue rechazado por <strong>{detalle.VisadoPorNombre}</strong> " +
+                $"en la revisión del Residente.<br/>Motivo: {dto.MotivoRechazo}");
+
+            return detalle;
+        }
+
+        public async Task<PedidoDetailDto> Aprobar(long id, long aprobadorId, LbScopeProyectos scope)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
+
+            if (!scope.Permite(pedido.ProyectoId))
+                throw new AbrilException("No tienes permiso para aprobar pedidos de este proyecto.", 403);
+            if (pedido.Estado != "PENDIENTE_GERENTE")
+                throw new AbrilException($"Solo se puede aprobar un pedido ya visado (PENDIENTE_GERENTE) — está en {pedido.Estado}.", 400);
+
+            pedido.Estado = "APROBADO";
+            pedido.AprobadoPorUsuarioSistemaId = aprobadorId;
+            pedido.AprobadoEn = DateTimeOffset.UtcNow;
+            await ctx.SaveChangesAsync();
+
+            var detalle = await BuildDetail(ctx, id);
+            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                $"Tu pedido {detalle.Codigo} fue aprobado",
+                $"Tu pedido <strong>{detalle.Codigo}</strong> fue aprobado por <strong>{detalle.AprobadoPorNombre}</strong> " +
+                "y está listo para ser atendido y entregado.");
+
+            // Recién acá se avisa a quien despacha (Logística/Almacenero) — no antes, porque hasta
+            // este punto el pedido todavía podía ser rechazado en cualquiera de los dos niveles.
+            var entregadores = await GetEmailsConPermiso(ctx, "PEDIDO_ENTREGAR", pedido.ProyectoId);
+            await NotificarEvento(
+                entregadores.ToArray(),
+                $"Pedido {detalle.Codigo} aprobado, pendiente de despacho",
+                $"El pedido <strong>{detalle.Codigo}</strong> ({detalle.Items.Count} producto(s)) de " +
+                $"<strong>{detalle.SolicitanteNombre}</strong> en <strong>{detalle.ProyectoNombre}</strong> ya fue " +
+                $"aprobado por {detalle.AprobadoPorNombre} — está listo para atender y despachar.");
+
+            return detalle;
+        }
+
+        public async Task<PedidoDetailDto> Rechazar(long id, long aprobadorId, RechazarPedidoDto dto, LbScopeProyectos scope)
+        {
+            if (string.IsNullOrWhiteSpace(dto.MotivoRechazo))
+                throw new AbrilException("El motivo de rechazo es obligatorio.", 400);
+
+            using var ctx = _factory.CreateDbContext();
+            var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
+
+            if (!scope.Permite(pedido.ProyectoId))
+                throw new AbrilException("No tienes permiso para rechazar pedidos de este proyecto.", 403);
+            if (pedido.Estado != "PENDIENTE_GERENTE")
+                throw new AbrilException($"Solo se puede rechazar un pedido ya visado (PENDIENTE_GERENTE) — está en {pedido.Estado}.", 400);
 
             pedido.Estado = "RECHAZADO";
             pedido.MotivoRechazo = dto.MotivoRechazo;
@@ -155,7 +322,12 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             pedido.AprobadoEn = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
 
-            return await BuildDetail(ctx, id);
+            var detalle = await BuildDetail(ctx, id);
+            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                $"Tu pedido {detalle.Codigo} fue rechazado",
+                $"Tu pedido <strong>{detalle.Codigo}</strong> fue rechazado por <strong>{detalle.AprobadoPorNombre}</strong>.<br/>Motivo: {dto.MotivoRechazo}");
+
+            return detalle;
         }
 
         /// <summary>
@@ -163,13 +335,15 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
         /// al pedido). Valida stock de TODOS los items antes de mover cualquiera — si uno no
         /// alcanza, no se entrega nada (todo o nada; entrega parcial queda para más adelante).
         /// </summary>
-        public async Task<PedidoDetailDto> Entregar(long id, long entregadorId)
+        public async Task<PedidoDetailDto> Entregar(long id, long entregadorId, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
             var pedido = await ctx.Pedido.Include(p => p.Items).ThenInclude(i => i.Producto)
                 .FirstOrDefaultAsync(p => p.Id == id)
                 ?? throw new AbrilException("Pedido no encontrado.", 404);
 
+            if (!scope.Permite(pedido.ProyectoId))
+                throw new AbrilException("No tienes permiso para entregar pedidos de este proyecto.", 403);
             if (pedido.Estado != "APROBADO")
                 throw new AbrilException($"Solo se puede entregar un pedido APROBADO (está en {pedido.Estado}).", 400);
 
@@ -206,7 +380,12 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             pedido.EntregadoEn = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
 
-            return await BuildDetail(ctx, id);
+            var detalle = await BuildDetail(ctx, id);
+            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                $"Tu pedido {detalle.Codigo} fue entregado",
+                $"Tu pedido <strong>{detalle.Codigo}</strong> ya fue entregado por <strong>{detalle.EntregadoPorNombre}</strong>.");
+
+            return detalle;
         }
 
         public async Task<PedidoDetailDto> Cancelar(long id, long solicitanteId)
@@ -231,6 +410,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                 .Include(p => p.Proyecto)
                 .Include(p => p.Almacen)
                 .Include(p => p.Solicitante!).ThenInclude(u => u!.Persona)
+                .Include(p => p.VisadoPor!).ThenInclude(u => u!.Persona)
                 .Include(p => p.AprobadoPor!).ThenInclude(u => u!.Persona)
                 .Include(p => p.EntregadoPor!).ThenInclude(u => u!.Persona)
                 .Include(p => p.Items).ThenInclude(i => i.Producto)
@@ -244,15 +424,18 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                 ProyectoNombre = pedido.Proyecto!.Nombre,
                 AlmacenNombre = pedido.Almacen!.Nombre,
                 SolicitanteUsuarioSistemaId = pedido.SolicitanteUsuarioSistemaId,
-                SolicitanteNombre = $"{pedido.Solicitante!.Persona!.Nombres} {pedido.Solicitante.Persona.Apellidos}",
+                SolicitanteNombre = $"{pedido.Solicitante!.Persona!.Apellidos} {pedido.Solicitante.Persona.Nombres}",
                 Estado = pedido.Estado,
                 Observacion = pedido.Observacion,
                 MotivoRechazo = pedido.MotivoRechazo,
+                VisadoPorNombre = pedido.VisadoPor?.Persona != null
+                    ? $"{pedido.VisadoPor.Persona.Apellidos} {pedido.VisadoPor.Persona.Nombres}" : null,
+                VisadoEn = pedido.VisadoEn,
                 AprobadoPorNombre = pedido.AprobadoPor?.Persona != null
-                    ? $"{pedido.AprobadoPor.Persona.Nombres} {pedido.AprobadoPor.Persona.Apellidos}" : null,
+                    ? $"{pedido.AprobadoPor.Persona.Apellidos} {pedido.AprobadoPor.Persona.Nombres}" : null,
                 AprobadoEn = pedido.AprobadoEn,
                 EntregadoPorNombre = pedido.EntregadoPor?.Persona != null
-                    ? $"{pedido.EntregadoPor.Persona.Nombres} {pedido.EntregadoPor.Persona.Apellidos}" : null,
+                    ? $"{pedido.EntregadoPor.Persona.Apellidos} {pedido.EntregadoPor.Persona.Nombres}" : null,
                 EntregadoEn = pedido.EntregadoEn,
                 CreadoEn = pedido.CreadoEn,
                 Items = pedido.Items.Select(i => new PedidoItemDetailDto

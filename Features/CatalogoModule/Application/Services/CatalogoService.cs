@@ -34,6 +34,16 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             return new CategoriaDto { Id = categoria.Id, Nombre = categoria.Nombre, Tipo = categoria.Tipo };
         }
 
+        public async Task<List<TallaDto>> ListTallas(string tipoTalla)
+        {
+            using var ctx = _factory.CreateDbContext();
+            return await ctx.Talla
+                .Where(t => t.TipoTalla == tipoTalla)
+                .OrderBy(t => t.Orden)
+                .Select(t => new TallaDto { Valor = t.Valor })
+                .ToListAsync();
+        }
+
         public async Task<ProductoListResponseDto> ListProductos(string? search, int page, int pageSize)
         {
             using var ctx = _factory.CreateDbContext();
@@ -63,6 +73,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
                     CategoriaTipo = p.Categoria.Tipo,
                     UnidadMedida = p.UnidadMedida,
                     RequiereTalla = p.RequiereTalla,
+                    TipoTalla = p.TipoTalla,
                     EsRetornable = p.EsRetornable,
                     Activo = p.Activo,
                 })
@@ -84,6 +95,16 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             var producto = await ctx.Producto.Include(p => p.Categoria).FirstOrDefaultAsync(p => p.Id == id)
                 ?? throw new AbrilException("Producto no encontrado.", 404);
             return ToDetailDto(producto);
+        }
+
+        private static readonly string[] TiposTallaValidos = { "ROPA", "CALZADO", "GUANTES" };
+
+        private static string? ValidarTipoTalla(bool requiereTalla, string? tipoTalla)
+        {
+            if (!requiereTalla) return null;
+            if (string.IsNullOrWhiteSpace(tipoTalla) || !TiposTallaValidos.Contains(tipoTalla))
+                throw new AbrilException("Si el producto requiere talla, debes indicar el tipo: ROPA, CALZADO o GUANTES.", 400);
+            return tipoTalla;
         }
 
         public async Task<ProductoDetailDto> CrearProducto(ProductoCreateDto dto)
@@ -108,6 +129,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
                 CategoriaId = dto.CategoriaId,
                 UnidadMedida = dto.UnidadMedida,
                 RequiereTalla = dto.RequiereTalla,
+                TipoTalla = ValidarTipoTalla(dto.RequiereTalla, dto.TipoTalla),
                 EsRetornable = dto.EsRetornable,
                 Activo = true,
                 CreadoEn = DateTimeOffset.UtcNow,
@@ -141,6 +163,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             producto.CategoriaId = dto.CategoriaId;
             producto.UnidadMedida = dto.UnidadMedida;
             producto.RequiereTalla = dto.RequiereTalla;
+            producto.TipoTalla = ValidarTipoTalla(dto.RequiereTalla, dto.TipoTalla);
             producto.EsRetornable = dto.EsRetornable;
             producto.Activo = dto.Activo;
             await ctx.SaveChangesAsync();
@@ -181,6 +204,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             CategoriaNombre = p.Categoria?.Nombre ?? "",
             UnidadMedida = p.UnidadMedida,
             RequiereTalla = p.RequiereTalla,
+            TipoTalla = p.TipoTalla,
             EsRetornable = p.EsRetornable,
             Activo = p.Activo,
         };

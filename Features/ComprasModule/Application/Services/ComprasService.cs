@@ -4,6 +4,7 @@ using Abril_Backend.Features.AlmacenModule.Application.Interfaces;
 using Abril_Backend.Features.ComprasModule.Application.Dtos;
 using Abril_Backend.Features.ComprasModule.Application.Interfaces;
 using Abril_Backend.Features.ComprasModule.Infrastructure.Models;
+using Abril_Backend.Features.PersonasModule;
 using Abril_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -119,7 +120,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             return await BuildDetail(ctx, orden.Id);
         }
 
-        public async Task<OrdenCompraListResponseDto> List(string? estado, int page, int pageSize)
+        public async Task<OrdenCompraListResponseDto> List(string? search, string? estado, HashSet<int>? proyectosPermitidos, int page, int pageSize)
         {
             using var ctx = _factory.CreateDbContext();
 
@@ -129,7 +130,15 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                 .Include(o => o.Items)
                 .AsQueryable();
 
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLower();
+                query = query.Where(o => o.Codigo.ToLower().Contains(s) || o.Proveedor!.RazonSocial.ToLower().Contains(s));
+            }
             if (!string.IsNullOrWhiteSpace(estado)) query = query.Where(o => o.Estado == estado);
+            // La orden no tiene proyecto propio — se filtra por el proyecto de SU almacén.
+            if (proyectosPermitidos != null)
+                query = query.Where(o => o.Almacen!.ProyectoId != null && proyectosPermitidos.Contains(o.Almacen.ProyectoId.Value));
 
             var total = await query.CountAsync();
 
@@ -165,14 +174,19 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
-        public async Task<OrdenCompraDetailDto> RecibirItem(long ordenId, long itemId, RecibirItemDto dto, long recibidoPorId)
+        public async Task<OrdenCompraDetailDto> RecibirItem(long ordenId, long itemId, RecibirItemDto dto, long recibidoPorId, LbScopeProyectos scope)
         {
             if (dto.Cantidad <= 0)
                 throw new AbrilException("La cantidad recibida debe ser mayor a cero.", 400);
 
             using var ctx = _factory.CreateDbContext();
-            var orden = await ctx.OrdenCompra.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == ordenId)
+            var orden = await ctx.OrdenCompra.Include(o => o.Items).Include(o => o.Almacen)
+                .FirstOrDefaultAsync(o => o.Id == ordenId)
                 ?? throw new AbrilException("Orden de compra no encontrada.", 404);
+
+            // La orden no tiene proyecto propio — se valida contra el proyecto de su almacén.
+            if (orden.Almacen!.ProyectoId.HasValue && !scope.Permite(orden.Almacen.ProyectoId.Value))
+                throw new AbrilException("No tienes permiso para registrar recepciones de este proyecto.", 403);
 
             if (orden.Estado == "CANCELADA")
                 throw new AbrilException("Esta orden está cancelada.", 400);
@@ -215,11 +229,15 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             return await BuildDetail(ctx, ordenId);
         }
 
-        public async Task<OrdenCompraDetailDto> Cancelar(long id)
+        public async Task<OrdenCompraDetailDto> Cancelar(long id, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
-            var orden = await ctx.OrdenCompra.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id)
+            var orden = await ctx.OrdenCompra.Include(o => o.Items).Include(o => o.Almacen)
+                .FirstOrDefaultAsync(o => o.Id == id)
                 ?? throw new AbrilException("Orden de compra no encontrada.", 404);
+
+            if (orden.Almacen!.ProyectoId.HasValue && !scope.Permite(orden.Almacen.ProyectoId.Value))
+                throw new AbrilException("No tienes permiso para cancelar órdenes de compra de este proyecto.", 403);
 
             if (orden.Items.Any(i => i.CantidadRecibida > 0))
                 throw new AbrilException("No se puede cancelar una orden que ya tiene mercadería recibida.", 400);
@@ -248,7 +266,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                 Codigo = orden.Codigo,
                 ProveedorNombre = orden.Proveedor!.RazonSocial,
                 AlmacenNombre = orden.Almacen!.Nombre,
-                SolicitadoPorNombre = $"{orden.SolicitadoPor!.Persona!.Nombres} {orden.SolicitadoPor.Persona.Apellidos}",
+                SolicitadoPorNombre = $"{orden.SolicitadoPor!.Persona!.Apellidos} {orden.SolicitadoPor.Persona.Nombres}",
                 Estado = orden.Estado,
                 Observacion = orden.Observacion,
                 CreadoEn = orden.CreadoEn,

@@ -93,7 +93,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     Cantidad = m.Cantidad,
                     CostoUnitario = m.CostoUnitario,
                     UsuarioNombre = m.UsuarioSistema != null && m.UsuarioSistema.Persona != null
-                        ? m.UsuarioSistema.Persona.Nombres + " " + m.UsuarioSistema.Persona.Apellidos
+                        ? m.UsuarioSistema.Persona.Apellidos + " " + m.UsuarioSistema.Persona.Nombres
                         : null,
                     CreadoEn = m.CreadoEn,
                 })

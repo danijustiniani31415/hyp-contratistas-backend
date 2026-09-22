@@ -37,9 +37,13 @@ namespace Abril_Backend.Features.HerramientasModule.Presentation
         }
 
         [HttpGet]
-        public async Task<IActionResult> List([FromQuery] bool soloAbiertos = false, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] bool soloAbiertos = false, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            try { return Ok(await _service.List(soloAbiertos, page, pageSize)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("HERRAMIENTA_PRESTAR");
+                return Ok(await _service.List(search, soloAbiertos, scope.EsGlobal ? null : scope.ProyectoIds, page, pageSize));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -57,7 +61,11 @@ namespace Abril_Backend.Features.HerramientasModule.Presentation
         {
             if (!User.HasLbPermiso("HERRAMIENTA_DEVOLVER"))
                 return StatusCode(403, new { message = "No tienes permiso para registrar devoluciones." });
-            try { return Ok(await _service.DevolverItem(id, itemId, dto, CurrentUsuarioSistemaId)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("HERRAMIENTA_DEVOLVER");
+                return Ok(await _service.DevolverItem(id, itemId, dto, CurrentUsuarioSistemaId, scope));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }

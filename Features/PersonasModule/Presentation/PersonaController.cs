@@ -22,6 +22,51 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         private long? CurrentUsuarioSistemaId =>
             long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
 
+        [HttpGet("reniec/{dni}")]
+        public async Task<IActionResult> BuscarPorDni(string dni)
+        {
+            try
+            {
+                var persona = await _service.BuscarPorDni(dni);
+                if (persona is null) return NotFound(new { message = "DNI no encontrado en RENIEC." });
+                return Ok(persona);
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("dashboard-planilla")]
+        public async Task<IActionResult> GetDashboardPlanilla()
+        {
+            try { return Ok(await _service.GetDashboardPlanilla()); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("cargos")]
+        public async Task<IActionResult> ListCargos()
+        {
+            try { return Ok(await _service.ListCargos()); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPost("cargos")]
+        public async Task<IActionResult> CrearCargo([FromBody] CargoCreateDto dto)
+        {
+            try { return Ok(await _service.CrearCargo(dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPut("cargos/{id:int}")]
+        public async Task<IActionResult> ActualizarCargo(int id, [FromBody] CargoUpdateDto dto)
+        {
+            try { return Ok(await _service.ActualizarCargo(id, dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpGet("catalogos")]
         public async Task<IActionResult> GetCatalogos()
         {
@@ -34,11 +79,17 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         }
 
         [HttpGet]
-        public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> List(
+            [FromQuery] string? search,
+            [FromQuery] int? cargoId,
+            [FromQuery] short? tipoVinculoId,
+            [FromQuery] string? estado,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
             try
             {
-                return Ok(await _service.List(search, page, pageSize));
+                return Ok(await _service.List(search, cargoId, tipoVinculoId, estado, page, pageSize));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -66,6 +117,22 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpPut("{id:int}")]
+        public async Task<IActionResult> ActualizarDatos(int id, [FromBody] PersonaUpdateDto dto)
+        {
+            try { return Ok(await _service.ActualizarDatos(id, dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPut("{id:int}/planilla")]
+        public async Task<IActionResult> ActualizarPlanilla(int id, [FromBody] PersonaPlanillaDto dto)
+        {
+            try { return Ok(await _service.ActualizarPlanilla(id, dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpPost("{id:int}/vinculos")]
         public async Task<IActionResult> NuevoVinculo(int id, [FromBody] NuevoVinculoDto dto)
         {
@@ -83,6 +150,17 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
             try
             {
                 return Ok(await _service.CrearUsuario(id, dto, CurrentUsuarioSistemaId));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPut("{id:int}/usuario/email")]
+        public async Task<IActionResult> CambiarEmail(int id, [FromBody] CambiarEmailDto dto)
+        {
+            try
+            {
+                return Ok(await _service.CambiarEmail(id, dto));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }

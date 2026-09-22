@@ -37,11 +37,15 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
         }
 
         [HttpGet]
-        public async Task<IActionResult> List([FromQuery] string? estado, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? estado, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             if (!User.HasLbPermiso("GUIA_REMISION_VER"))
                 return StatusCode(403, new { message = "No tienes permiso para ver guías de remisión." });
-            try { return Ok(await _service.List(estado, page, pageSize)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("GUIA_REMISION_VER");
+                return Ok(await _service.List(search, estado, scope.EsGlobal ? null : scope.ProyectoIds, page, pageSize));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -61,7 +65,11 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
         {
             if (!User.HasLbPermiso("GUIA_REMISION_ENVIAR"))
                 return StatusCode(403, new { message = "No tienes permiso para transmitir guías de remisión a SUNAT." });
-            try { return Ok(await _service.Enviar(id)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("GUIA_REMISION_ENVIAR");
+                return Ok(await _service.Enviar(id, scope));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception ex)
             {
@@ -75,7 +83,11 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
         {
             if (!User.HasLbPermiso("GUIA_REMISION_ENVIAR"))
                 return StatusCode(403, new { message = "No tienes permiso para consultar el estado ante SUNAT." });
-            try { return Ok(await _service.ConsultarEstado(id)); }
+            try
+            {
+                var scope = User.GetProyectosPermitidos("GUIA_REMISION_ENVIAR");
+                return Ok(await _service.ConsultarEstado(id, scope));
+            }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception ex) { return StatusCode(500, new { message = $"Error al consultar SUNAT: {ex.Message}" }); }
         }

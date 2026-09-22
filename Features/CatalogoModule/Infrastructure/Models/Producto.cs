@@ -18,6 +18,8 @@ namespace Abril_Backend.Features.CatalogoModule.Infrastructure.Models
         public string UnidadMedida { get; set; } = null!;
         /// <summary>true para EPP con talla (guantes, botas, etc.).</summary>
         public bool RequiereTalla { get; set; }
+        /// <summary>ROPA, CALZADO o GUANTES — qué catálogo fijo de lb_talla usar cuando RequiereTalla=true. Null si RequiereTalla=false.</summary>
+        public string? TipoTalla { get; set; }
         /// <summary>true para herramientas/equipos en préstamo (no se consumen, vuelven).</summary>
         public bool EsRetornable { get; set; }
         public bool Activo { get; set; } = true;

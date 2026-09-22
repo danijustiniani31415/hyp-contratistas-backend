@@ -5,6 +5,7 @@ using Abril_Backend.Features.GuiasRemisionModule.Application.Dtos;
 using Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces;
 using Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models;
 using Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat;
+using Abril_Backend.Features.PersonasModule;
 using Abril_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -141,7 +142,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             return await BuildDetail(ctx, guia.Id);
         }
 
-        public async Task<GuiaRemisionListResponseDto> List(string? estado, int page, int pageSize)
+        public async Task<GuiaRemisionListResponseDto> List(string? search, string? estado, HashSet<int>? proyectosPermitidos, int page, int pageSize)
         {
             using var ctx = _factory.CreateDbContext();
 
@@ -151,7 +152,18 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 .Include(g => g.Items)
                 .AsQueryable();
 
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLower();
+                query = query.Where(g =>
+                    (g.DestinatarioRazonSocial != null && g.DestinatarioRazonSocial.ToLower().Contains(s)) ||
+                    g.AlmacenOrigen!.Nombre.ToLower().Contains(s) ||
+                    (g.AlmacenDestino != null && g.AlmacenDestino.Nombre.ToLower().Contains(s)));
+            }
             if (!string.IsNullOrWhiteSpace(estado)) query = query.Where(g => g.Estado == estado);
+            // La guía no tiene proyecto propio — se filtra por el proyecto de su almacén de origen.
+            if (proyectosPermitidos != null)
+                query = query.Where(g => g.AlmacenOrigen!.ProyectoId != null && proyectosPermitidos.Contains(g.AlmacenOrigen.ProyectoId.Value));
 
             var total = await query.CountAsync();
             var data = await query
@@ -187,7 +199,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
-        public async Task<GuiaRemisionDetailDto> Enviar(long id)
+        public async Task<GuiaRemisionDetailDto> Enviar(long id, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
             var guia = await ctx.GuiaRemision
@@ -196,6 +208,10 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 .Include(g => g.Items).ThenInclude(i => i.Producto)
                 .FirstOrDefaultAsync(g => g.Id == id)
                 ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
+
+            // La guía no tiene proyecto propio — se valida contra el proyecto de su almacén de origen.
+            if (guia.AlmacenOrigen!.ProyectoId.HasValue && !scope.Permite(guia.AlmacenOrigen.ProyectoId.Value))
+                throw new AbrilException("No tienes permiso para transmitir guías de remisión de este proyecto.", 403);
 
             if (guia.Estado != "BORRADOR")
                 throw new AbrilException($"Esta guía ya fue transmitida (estado {guia.Estado}) — no se puede reenviar.", 400);
@@ -240,11 +256,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
-        public async Task<GuiaRemisionDetailDto> ConsultarEstado(long id)
+        public async Task<GuiaRemisionDetailDto> ConsultarEstado(long id, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
-            var guia = await ctx.GuiaRemision.FirstOrDefaultAsync(g => g.Id == id)
+            var guia = await ctx.GuiaRemision.Include(g => g.AlmacenOrigen).FirstOrDefaultAsync(g => g.Id == id)
                 ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
+
+            if (guia.AlmacenOrigen!.ProyectoId.HasValue && !scope.Permite(guia.AlmacenOrigen.ProyectoId.Value))
+                throw new AbrilException("No tienes permiso para consultar guías de remisión de este proyecto.", 403);
 
             if (guia.Estado != "ENVIADA" || string.IsNullOrWhiteSpace(guia.Ticket))
                 throw new AbrilException("Esta guía no tiene un ticket pendiente de SUNAT.", 400);
@@ -296,7 +315,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 Observacion = guia.Observacion,
                 ReferenciaTipo = guia.ReferenciaTipo,
                 ReferenciaId = guia.ReferenciaId,
-                CreadoPorNombre = $"{guia.CreadoPor!.Persona!.Nombres} {guia.CreadoPor.Persona.Apellidos}",
+                CreadoPorNombre = $"{guia.CreadoPor!.Persona!.Apellidos} {guia.CreadoPor.Persona.Nombres}",
                 CreadoEn = guia.CreadoEn,
                 Ticket = guia.Ticket,
                 CdrCodigoRespuesta = guia.CdrCodigoRespuesta,

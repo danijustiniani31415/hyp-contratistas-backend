@@ -30,6 +30,8 @@ Provider selectors in config drive DI:
 - `Email:EmailProvider` → `"SendGrid"` | `"PowerAutomate"` | (default) SMTP.
 - `Storage:StorageProvider` → `"Azure"` (Blob) | (default) Local filesystem under `wwwroot/uploads`. `IStorageContainerResolver` resolves logical container names (lessons, ivts, cuaderno-de-obra, etc.) from `StorageOptions`.
 
+**`Email` section in `appsettings.Local.json` must mirror `appsettings.Production.json` exactly** (same `EmailProvider`, same `DefaultSender`, same real `Senders` entry — currently a single `"Aprobaciones"` sender pointing to `admin@hpconstructoresgenerales.com` over SMTP/Office365, the only mailbox that actually exists). Confirmed 2026-09-22: the user wants local testing to be genuinely representative of production email behavior, not a stub — do not add placeholder senders (`aprobaciones@`, `gth@`, `medicinaocupacional@`, etc.) that don't correspond to a real mailbox, and do not copy Abril's sender scheme into this project by default. Before touching anything email-related, read the current `Email` block in `appsettings.Production.json` (via SSH, see droplet path `/opt/hyp-contratistas/appsettings.Production.json`) and make sure Local matches it.
+
 ## Architecture: two coexisting patterns
 
 The codebase mixes a **traditional layered** layout with a newer **vertical-slice Features** layout. New work generally goes under `Features/`; older/shared domains still live at the repo root.

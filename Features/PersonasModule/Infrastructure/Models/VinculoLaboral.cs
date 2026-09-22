@@ -18,6 +18,10 @@ namespace Abril_Backend.Features.PersonasModule.Infrastructure.Models
         public short TipoVinculoId { get; set; }
         public int? EmpresaContratistaId { get; set; }
         public int? CargoId { get; set; }
+        /// <summary>Sede/proyecto donde trabaja esta persona (Central Lima, Las Bravas, ...) —
+        /// distinto del scope de acceso al sistema (lb_usuario_asignacion.proyecto_id), aunque
+        /// normalmente coincidan.</summary>
+        public int? ProyectoId { get; set; }
         public DateOnly FechaInicio { get; set; }
         public DateOnly? FechaFin { get; set; }
         public string Estado { get; set; } = "ACTIVO";
@@ -33,5 +37,7 @@ namespace Abril_Backend.Features.PersonasModule.Infrastructure.Models
         public EmpresaContratista? EmpresaContratista { get; set; }
         [ForeignKey(nameof(CargoId))]
         public Cargo? Cargo { get; set; }
+        [ForeignKey(nameof(ProyectoId))]
+        public Proyecto? Proyecto { get; set; }
     }
 }

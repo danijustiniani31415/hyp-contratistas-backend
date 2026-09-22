@@ -58,6 +58,8 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
         public string Estado { get; set; } = null!;
         public string? Observacion { get; set; }
         public string? MotivoRechazo { get; set; }
+        public string? VisadoPorNombre { get; set; }
+        public DateTimeOffset? VisadoEn { get; set; }
         public string? AprobadoPorNombre { get; set; }
         public DateTimeOffset? AprobadoEn { get; set; }
         public string? EntregadoPorNombre { get; set; }
@@ -69,5 +71,14 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
     public class RechazarPedidoDto
     {
         public string MotivoRechazo { get; set; } = null!;
+    }
+
+    /// <summary>Preview de destinatarios por etapa del flujo, para un proyecto dado — no envía nada,
+    /// solo muestra a qué correos llegaría cada notificación (verificación antes de confiar en el flujo).</summary>
+    public class PedidoDestinatariosDto
+    {
+        public List<string> Visadores { get; set; } = new();
+        public List<string> Aprobadores { get; set; } = new();
+        public List<string> Entregadores { get; set; } = new();
     }
 }

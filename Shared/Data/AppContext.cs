@@ -63,6 +63,9 @@ namespace Abril_Backend.Infrastructure.Data
         public static string Unaccent(string input) => throw new NotSupportedException();
         // ── Las Bravas / HP Constructores: Fase 1, Modelo de Personas ──────
         public DbSet<Persona> Persona { get; set; }
+        public DbSet<PersonaPlanilla> PersonaPlanilla { get; set; }
+        public DbSet<Tareo> Tareo { get; set; }
+        public DbSet<CatalogoValor> CatalogoValor { get; set; }
         public DbSet<TipoVinculo> TipoVinculo { get; set; }
         public DbSet<EmpresaContratista> EmpresaContratista { get; set; }
         public DbSet<Cargo> Cargo { get; set; }
@@ -78,6 +81,7 @@ namespace Abril_Backend.Infrastructure.Data
         // ── Las Bravas / HP Constructores: Catálogo Maestro (Fase 1, punto 2) ──
         public DbSet<CategoriaProducto> CategoriaProducto { get; set; }
         public DbSet<Producto> Producto { get; set; }
+        public DbSet<Talla> Talla { get; set; }
         // ── Las Bravas / HP Constructores: Almacén / Kardex (Fase 1, punto 3) ──
         public DbSet<Stock> Stock { get; set; }
         public DbSet<Movimiento> Movimiento { get; set; }
@@ -98,6 +102,11 @@ namespace Abril_Backend.Infrastructure.Data
         // ── Las Bravas / HP Constructores: Guías de Remisión (Fase 3) ──
         public DbSet<GuiaRemision> GuiaRemision { get; set; }
         public DbSet<GuiaRemisionItem> GuiaRemisionItem { get; set; }
+        // ── Las Bravas / HP Constructores: Planillas — motor de cálculo (Fase 3) ──
+        public DbSet<ConceptoPlanilla> ConceptoPlanilla { get; set; }
+        public DbSet<PlanillaPeriodo> PlanillaPeriodo { get; set; }
+        public DbSet<PlanillaDetalle> PlanillaDetalle { get; set; }
+        public DbSet<PlanillaDetalleConcepto> PlanillaDetalleConcepto { get; set; }
 
         public DbSet<Area> Area { get; set; }
         public DbSet<SubArea> SubArea { get; set; }
@@ -638,6 +647,10 @@ namespace Abril_Backend.Infrastructure.Data
             {
                 ConfigureSqlServer(modelBuilder);
             }
+
+            // PersonaPlanilla es 1:1 con Persona — PersonaId es a la vez PK y FK, así que la
+            // convención de EF (busca "Id" o "PersonaPlanillaId") no la detecta sola.
+            modelBuilder.Entity<PersonaPlanilla>().HasKey(p => p.PersonaId);
 
             base.OnModelCreating(modelBuilder);
 
