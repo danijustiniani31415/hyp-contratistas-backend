@@ -10,6 +10,10 @@ namespace Abril_Backend.Features.ComprasModule.Infrastructure.Models
         public long Id { get; set; }
         public long OrdenCompraItemId { get; set; }
         public decimal Cantidad { get; set; }
+        /// <summary>Factura del proveedor que vino con esta entrega puntual — un proveedor rara
+        /// vez manda una sola factura por toda la OC, factura cada envío parcial por separado.</summary>
+        public string? FacturaNumero { get; set; }
+        public decimal? FacturaMonto { get; set; }
         public long RecibidoPorUsuarioSistemaId { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
 

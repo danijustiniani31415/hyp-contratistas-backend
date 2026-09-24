@@ -74,6 +74,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
                     UnidadMedida = p.UnidadMedida,
                     RequiereTalla = p.RequiereTalla,
                     TipoTalla = p.TipoTalla,
+                    RequiereColor = p.RequiereColor,
                     EsRetornable = p.EsRetornable,
                     Activo = p.Activo,
                 })
@@ -130,6 +131,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
                 UnidadMedida = dto.UnidadMedida,
                 RequiereTalla = dto.RequiereTalla,
                 TipoTalla = ValidarTipoTalla(dto.RequiereTalla, dto.TipoTalla),
+                RequiereColor = dto.RequiereColor,
                 EsRetornable = dto.EsRetornable,
                 Activo = true,
                 CreadoEn = DateTimeOffset.UtcNow,
@@ -164,6 +166,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             producto.UnidadMedida = dto.UnidadMedida;
             producto.RequiereTalla = dto.RequiereTalla;
             producto.TipoTalla = ValidarTipoTalla(dto.RequiereTalla, dto.TipoTalla);
+            producto.RequiereColor = dto.RequiereColor;
             producto.EsRetornable = dto.EsRetornable;
             producto.Activo = dto.Activo;
             await ctx.SaveChangesAsync();
@@ -205,6 +208,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             UnidadMedida = p.UnidadMedida,
             RequiereTalla = p.RequiereTalla,
             TipoTalla = p.TipoTalla,
+            RequiereColor = p.RequiereColor,
             EsRetornable = p.EsRetornable,
             Activo = p.Activo,
         };

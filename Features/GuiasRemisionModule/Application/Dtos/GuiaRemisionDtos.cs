@@ -4,8 +4,22 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
     {
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }
         public string UnidadMedida { get; set; } = "NIU";
+        /// <summary>Null = despacho suelto. Con valor: este ítem despacha ese ítem de pedido puntual.</summary>
+        public long? PedidoItemId { get; set; }
+    }
+
+    public class ConfirmarRecepcionItemDto
+    {
+        public long ItemId { get; set; }
+        public decimal CantidadConfirmada { get; set; }
+    }
+
+    public class ConfirmarRecepcionDto
+    {
+        public List<ConfirmarRecepcionItemDto> Items { get; set; } = new();
     }
 
     public class GuiaRemisionCreateDto
@@ -41,8 +55,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string ProductoNombre { get; set; } = null!;
         public string? ProductoCodigo { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }
         public string UnidadMedida { get; set; } = "NIU";
+        public long? PedidoItemId { get; set; }
+        public string? PedidoCodigo { get; set; }
+        public decimal? CantidadConfirmada { get; set; }
+        public DateTimeOffset? ConfirmadoEn { get; set; }
+        public string? ConfirmadoPorNombre { get; set; }
     }
 
     public class GuiaRemisionDetailDto
@@ -82,6 +102,10 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string? CdrDescripcion { get; set; }
         public DateTimeOffset? EnviadoEn { get; set; }
         public DateTimeOffset? RespondidoEn { get; set; }
+
+        /// <summary>True si tiene almacén de destino, ya se transmitió a SUNAT y nadie confirmó
+        /// recepción todavía — gatilla el botón "Confirmar recepción" en el frontend.</summary>
+        public bool ConfirmacionPendiente { get; set; }
 
         public List<GuiaRemisionItemDetailDto> Items { get; set; } = new();
     }

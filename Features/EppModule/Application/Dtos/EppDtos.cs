@@ -4,6 +4,7 @@ namespace Abril_Backend.Features.EppModule.Application.Dtos
     {
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }
     }
 
@@ -21,6 +22,7 @@ namespace Abril_Backend.Features.EppModule.Application.Dtos
         public string ProductoNombre { get; set; } = null!;
         public string? ProductoCodigo { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }
     }
 

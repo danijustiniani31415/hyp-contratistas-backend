@@ -373,7 +373,48 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
             persona.ActualizadoEn = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
 
+            // [DECIDIDO 2026-09-24] correo personal y correo de acceso son un solo correo para el
+            // usuario final — si la persona ya tiene acceso ACTIVO, editar su correo personal acá
+            // también actualiza su login, con el mismo aviso de seguridad al correo anterior que
+            // usa CambiarEmail. Evita que ambos campos queden desalineados sin que nadie lo note.
+            await SincronizarEmailLogin(ctx, persona, persona.EmailPersonal);
+
             return await BuildDetail(ctx, persona);
+        }
+
+        private async Task SincronizarEmailLogin(AppDbContext ctx, Persona persona, string? nuevoEmailPersonal)
+        {
+            if (string.IsNullOrWhiteSpace(nuevoEmailPersonal)) return;
+
+            var usuario = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.PersonaId == persona.Id);
+            if (usuario is null) return;
+
+            var nuevoEmail = nuevoEmailPersonal.Trim().ToLower();
+            if (nuevoEmail == usuario.EmailLogin) return;
+
+            var emailEnUso = await ctx.UsuarioSistema.AnyAsync(u => u.EmailLogin == nuevoEmail && u.Id != usuario.Id);
+            if (emailEnUso)
+                throw new AbrilException(
+                    $"No se pudo actualizar el correo de acceso: '{nuevoEmail}' ya está en uso por otro usuario.", 409);
+
+            var emailAnterior = usuario.EmailLogin;
+            usuario.EmailLogin = nuevoEmail;
+            await ctx.SaveChangesAsync();
+
+            // Si todavía no activó su cuenta, nadie llegó a loguearse con el correo viejo — no hay
+            // a quién avisar, y avisar ahí solo generaría ruido/confusión.
+            if (usuario.Estado != "ACTIVO") return;
+
+            var html = $@"<h2>Tu correo de acceso cambió</h2>
+<p>Hola {persona.Nombres}, el correo con el que ingresas a la plataforma de HP Constructores / Las Bravas cambió de <strong>{emailAnterior}</strong> a <strong>{nuevoEmail}</strong> (se actualizó junto con tu correo personal).</p>
+<p>Si tú o un administrador autorizado hicieron este cambio, no necesitas hacer nada.</p>
+<p>Si no reconoces este cambio, contacta de inmediato al administrador del sistema.</p>";
+
+            await _emailService.SendAsync(
+                to: new List<string> { emailAnterior },
+                subject: "Tu correo de acceso cambió - HP Constructores Generales",
+                body: html,
+                isHtml: true);
         }
 
         public async Task<PersonaDetailDto> ActualizarPlanilla(int personaId, PersonaPlanillaDto dto)
@@ -474,7 +515,10 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 if (usuarioExistente.Estado == "ACTIVO")
                     throw new AbrilException("Esta persona ya tiene un usuario de sistema activo.", 409);
 
-                usuarioExistente.Estado = "ACTIVO";
+                // Estado se pasa a ACTIVO recién al final, si el correo de activación sale bien —
+                // si se deja en ACTIVO acá y el envío falla (ej. caída del proveedor de correo), la
+                // persona queda con usuario "activo" pero sin enlace utilizable, y el 409 de arriba
+                // bloquea cualquier reintento.
                 usuarioExistente.EmailLogin = email;
                 usuario = usuarioExistente;
             }
@@ -488,7 +532,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 {
                     PersonaId = personaId,
                     EmailLogin = email,
-                    Estado = "ACTIVO",
+                    Estado = "INACTIVO",
                     CreadoEn = DateTimeOffset.UtcNow,
                 };
                 ctx.UsuarioSistema.Add(usuario);
@@ -530,6 +574,11 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 body: html,
                 isHtml: true);
 
+            // Recién acá se confirma el acceso — si SendAsync lanza, el usuario queda INACTIVO
+            // y el próximo intento cae en la rama de reactivación de arriba en vez del 409.
+            usuario.Estado = "ACTIVO";
+            await ctx.SaveChangesAsync();
+
             return await BuildDetail(ctx, persona);
         }
 
@@ -552,6 +601,9 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
 
             var emailAnterior = usuario.EmailLogin;
             usuario.EmailLogin = nuevoEmail;
+            // Un solo correo por persona (ver SincronizarEmailLogin) — el sync también corre en
+            // este sentido, si no el correo personal se queda desalineado sin que nadie lo note.
+            persona.EmailPersonal = nuevoEmail;
             await ctx.SaveChangesAsync();
 
             var html = $@"<h2>Tu correo de acceso cambió</h2>
@@ -564,6 +616,67 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 subject: "Tu correo de acceso cambió - HP Constructores Generales",
                 body: html,
                 isHtml: true);
+
+            return await BuildDetail(ctx, persona);
+        }
+
+        /// <summary>
+        /// Botón único "Reenviar credenciales" en la ficha de la persona — no le pide al admin
+        /// distinguir si la persona nunca activó su cuenta o ya la activó y perdió el acceso; en
+        /// ambos casos genera un link nuevo al correo de acceso actual (mismo mecanismo de token
+        /// que la invitación inicial y que "olvidé mi contraseña").
+        /// </summary>
+        public async Task<PersonaDetailDto> ReenviarCredenciales(int personaId)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var persona = await ctx.Persona.FindAsync(personaId)
+                ?? throw new AbrilException("Persona no encontrada.", 404);
+
+            var usuario = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.PersonaId == personaId)
+                ?? throw new AbrilException("Esta persona no tiene usuario de sistema.", 404);
+
+            var tokensPrevios = await ctx.LbUsuarioPasswordToken
+                .Where(t => t.UsuarioSistemaId == usuario.Id && !t.Usado)
+                .ToListAsync();
+            foreach (var t in tokensPrevios) t.Usado = true;
+            if (tokensPrevios.Count > 0) await ctx.SaveChangesAsync();
+
+            var yaActivo = usuario.Estado == "ACTIVO";
+            var token = GenerarToken();
+            ctx.LbUsuarioPasswordToken.Add(new LbUsuarioPasswordToken
+            {
+                UsuarioSistemaId = usuario.Id,
+                Token = token,
+                ExpiraEn = DateTime.UtcNow.AddHours(yaActivo ? 2 : 48),
+                Usado = false,
+                CreadoEn = DateTime.UtcNow,
+            });
+            await ctx.SaveChangesAsync();
+
+            var link = $"{_frontendSettings.LbSetPasswordUrl}?token={token}";
+            var html = yaActivo
+                ? $@"<h2>Restablece tu contraseña</h2>
+<p>Hola {persona.Nombres}, un administrador solicitó un enlace para restablecer tu contraseña en HP Constructores / Las Bravas.</p>
+<p>Haz clic en el siguiente enlace para crear una nueva contraseña:</p>
+<a href='{link}' style='background:#1E3A5F;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;margin:16px 0'>Restablecer contraseña</a>
+<p>Este enlace expira en 2 horas.</p>"
+                : $@"<h2>Bienvenido a HP Constructores Generales</h2>
+<p>Hola {persona.Nombres}, se creó tu acceso al sistema.</p>
+<p>Haz clic en el siguiente enlace para crear tu contraseña y empezar a usarlo:</p>
+<a href='{link}' style='background:#0F172A;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;margin:16px 0'>Activar mi cuenta</a>
+<p>Este enlace expira en 48 horas.</p>";
+
+            await _emailService.SendAsync(
+                to: new List<string> { usuario.EmailLogin },
+                subject: yaActivo ? "Restablece tu contraseña - HP Constructores Generales" : "Activa tu cuenta - HP Constructores Generales",
+                body: html,
+                isHtml: true);
+
+            if (!yaActivo)
+            {
+                usuario.Estado = "ACTIVO";
+                await ctx.SaveChangesAsync();
+            }
 
             return await BuildDetail(ctx, persona);
         }
@@ -599,6 +712,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 RolId = dto.RolId,
                 ProyectoId = dto.ProyectoId,
                 AlmacenId = dto.AlmacenId,
+                Notificar = dto.Notificar,
                 FechaInicio = DateOnly.FromDateTime(DateTime.UtcNow),
                 OtorgadoPorUsuarioSistemaId = otorgadoPor,
                 CreadoEn = DateTimeOffset.UtcNow,
@@ -622,6 +736,25 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 ?? throw new AbrilException("Asignación no encontrada o ya revocada.", 404);
 
             asignacion.FechaFin = DateOnly.FromDateTime(DateTime.UtcNow);
+            await ctx.SaveChangesAsync();
+
+            return await BuildDetail(ctx, persona);
+        }
+
+        public async Task<PersonaDetailDto> ToggleNotificarAsignacion(int personaId, long asignacionId, bool notificar)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var persona = await ctx.Persona.FindAsync(personaId)
+                ?? throw new AbrilException("Persona no encontrada.", 404);
+
+            var usuario = await ctx.UsuarioSistema.FirstOrDefaultAsync(u => u.PersonaId == personaId)
+                ?? throw new AbrilException("Esta persona no tiene usuario de sistema.", 404);
+
+            var asignacion = await ctx.UsuarioAsignacion
+                .FirstOrDefaultAsync(a => a.Id == asignacionId && a.UsuarioSistemaId == usuario.Id && a.FechaFin == null)
+                ?? throw new AbrilException("Asignación no encontrada o ya revocada.", 404);
+
+            asignacion.Notificar = notificar;
             await ctx.SaveChangesAsync();
 
             return await BuildDetail(ctx, persona);
@@ -692,6 +825,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                         ProyectoNombre = a.Proyecto != null ? a.Proyecto.Nombre : null,
                         AlmacenNombre = a.Almacen != null ? a.Almacen.Nombre : null,
                         FechaInicio = a.FechaInicio,
+                        Notificar = a.Notificar,
                     })
                     .ToListAsync();
             }
@@ -722,6 +856,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 Vinculos = vinculos,
                 UsuarioSistemaId = usuario?.Id,
                 EmailLogin = usuario?.EmailLogin,
+                EstadoUsuario = usuario?.Estado,
                 Asignaciones = asignaciones,
             };
         }

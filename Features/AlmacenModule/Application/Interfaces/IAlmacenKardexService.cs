@@ -11,5 +11,9 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Interfaces
         Task RegistrarMovimiento(RegistrarMovimientoDto dto, long? usuarioSistemaId);
 
         Task AjustarUmbrales(AjustarUmbralesDto dto);
+
+        /// <summary>Productos con CantidadActual bajo StockMinimo — alimenta el panel de Logística
+        /// para reponer aunque no haya un pedido puntual detrás.</summary>
+        Task<List<ReposicionSugeridaDto>> ListReposicionSugerida(int? almacenId);
     }
 }

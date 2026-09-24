@@ -17,7 +17,13 @@ namespace Abril_Backend.Features.AlmacenModule.Infrastructure.Models
         public long ProductoId { get; set; }
         /// <summary>'' (no NULL) para productos sin talla — así el UNIQUE de la tabla detecta duplicados.</summary>
         public string Talla { get; set; } = "";
+        /// <summary>'' (no NULL) para productos sin color — mismo motivo que Talla; forma parte del UNIQUE.</summary>
+        public string Color { get; set; } = "";
         public decimal CantidadActual { get; set; }
+        /// <summary>Costo promedio ponderado — se recalcula en cada INGRESO con costo conocido
+        /// (compra); las SALIDAs no lo tocan, solo se valorizan a este costo (ver
+        /// AlmacenKardexService.RegistrarMovimiento).</summary>
+        public decimal CostoPromedio { get; set; }
         public decimal StockMinimo { get; set; }
         public decimal? StockMaximo { get; set; }
         public DateTimeOffset ActualizadoEn { get; set; }

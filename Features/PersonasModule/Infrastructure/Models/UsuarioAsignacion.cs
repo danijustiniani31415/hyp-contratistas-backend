@@ -22,6 +22,13 @@ namespace Abril_Backend.Features.PersonasModule.Infrastructure.Models
         public long? OtorgadoPorUsuarioSistemaId { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
 
+        /// <summary>
+        /// Tener el permiso (poder actuar) y que te notifiquen por correo son cosas distintas —
+        /// alguien puede necesitar un rol solo para acceso/mantenimiento sin querer los correos de
+        /// cada evento real de ese rol. Default true: por defecto notifica, como hasta ahora.
+        /// </summary>
+        public bool Notificar { get; set; } = true;
+
         [ForeignKey(nameof(UsuarioSistemaId))]
         public UsuarioSistema? UsuarioSistema { get; set; }
         [ForeignKey(nameof(RolId))]

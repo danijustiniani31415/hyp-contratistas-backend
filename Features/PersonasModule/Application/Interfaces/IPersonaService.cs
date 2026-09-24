@@ -12,8 +12,10 @@ namespace Abril_Backend.Features.PersonasModule.Application.Interfaces
         Task<PersonaDetailDto> NuevoVinculo(int personaId, NuevoVinculoDto dto);
         Task<PersonaDetailDto> CrearUsuario(int personaId, CrearUsuarioDto dto, long? otorgadoPor);
         Task<PersonaDetailDto> CambiarEmail(int personaId, CambiarEmailDto dto);
+        Task<PersonaDetailDto> ReenviarCredenciales(int personaId);
         Task<PersonaDetailDto> NuevaAsignacion(int personaId, NuevaAsignacionDto dto, long? otorgadoPor);
         Task<PersonaDetailDto> RevocarAsignacion(int personaId, long asignacionId);
+        Task<PersonaDetailDto> ToggleNotificarAsignacion(int personaId, long asignacionId, bool notificar);
         Task<CatalogosPersonasDto> GetCatalogos();
         Task<ReniecPersonaDto?> BuscarPorDni(string dni);
 

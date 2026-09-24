@@ -12,6 +12,7 @@ namespace Abril_Backend.Features.AlmacenModule.Infrastructure.Models
         public int AlmacenId { get; set; }
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         /// <summary>INGRESO, SALIDA (TRANSFERENCIA soportado en el esquema, no usado aún).</summary>
         public string TipoMovimiento { get; set; } = null!;
         public decimal Cantidad { get; set; }

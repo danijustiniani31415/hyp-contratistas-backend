@@ -6,6 +6,7 @@ using Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces;
 using Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models;
 using Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat;
 using Abril_Backend.Features.PersonasModule;
+using Abril_Backend.Features.PedidosModule.Infrastructure.Models;
 using Abril_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -103,9 +104,19 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     GuiaRemisionId = guia.Id,
                     ProductoId = item.ProductoId,
                     Talla = item.Talla,
+                    Color = item.Color,
                     Cantidad = item.Cantidad,
                     UnidadMedida = item.UnidadMedida,
+                    PedidoItemId = item.PedidoItemId,
                 });
+
+                // Si este ítem despacha un pedido puntual, avanza su trazabilidad — recién con
+                // esto el pedido sabe que ya salió de Lima, antes de que mina confirme.
+                if (item.PedidoItemId.HasValue)
+                {
+                    var pedidoItem = await ctx.PedidoItem.FindAsync(item.PedidoItemId.Value);
+                    if (pedidoItem != null) pedidoItem.CantidadDespachada += item.Cantidad;
+                }
             }
             await ctx.SaveChangesAsync();
 
@@ -118,6 +129,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     AlmacenId = dto.AlmacenOrigenId,
                     ProductoId = item.ProductoId,
                     Talla = item.Talla,
+                    Color = item.Color,
                     TipoMovimiento = "SALIDA",
                     Cantidad = item.Cantidad,
                     ReferenciaTipo = "GUIA_REMISION",
@@ -131,6 +143,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                         AlmacenId = dto.AlmacenDestinoId.Value,
                         ProductoId = item.ProductoId,
                         Talla = item.Talla,
+                        Color = item.Color,
                         TipoMovimiento = "INGRESO",
                         Cantidad = item.Cantidad,
                         ReferenciaTipo = "GUIA_REMISION",
@@ -281,6 +294,77 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
+        public async Task<GuiaRemisionDetailDto> ConfirmarRecepcion(long id, ConfirmarRecepcionDto dto, long confirmadoPorId, LbScopeProyectos scope)
+        {
+            if (dto.Items.Count == 0)
+                throw new AbrilException("Indica la cantidad confirmada de al menos un ítem.", 400);
+
+            using var ctx = _factory.CreateDbContext();
+            var guia = await ctx.GuiaRemision
+                .Include(g => g.AlmacenDestino)
+                .Include(g => g.Items)
+                .FirstOrDefaultAsync(g => g.Id == id)
+                ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
+
+            if (guia.AlmacenDestinoId is null || guia.AlmacenDestino is null)
+                throw new AbrilException("Esta guía no tiene almacén de destino — no hay nada que confirmar.", 400);
+
+            // Se confirma del lado del destino (mina), no del origen (Lima) que la despachó.
+            if (guia.AlmacenDestino.ProyectoId.HasValue && !scope.Permite(guia.AlmacenDestino.ProyectoId.Value))
+                throw new AbrilException("No tienes permiso para confirmar recepción en el proyecto de destino de esta guía.", 403);
+
+            if (guia.Estado != "ENVIADA" && guia.Estado != "ACEPTADA")
+                throw new AbrilException($"Esta guía todavía no se transmitió a SUNAT (estado {guia.Estado}) — confírmala después de enviarla.", 400);
+
+            if (guia.Items.Any(i => i.ConfirmadoEn != null))
+                throw new AbrilException("Esta guía ya tiene una confirmación de recepción registrada.", 400);
+
+            var idsFaltantes = guia.Items.Select(i => i.Id).Except(dto.Items.Select(i => i.ItemId)).ToList();
+            if (idsFaltantes.Count > 0)
+                throw new AbrilException("Debes confirmar la cantidad recibida de todos los ítems de la guía.", 400);
+
+            foreach (var itemDto in dto.Items)
+            {
+                var item = guia.Items.FirstOrDefault(i => i.Id == itemDto.ItemId)
+                    ?? throw new AbrilException($"Ítem {itemDto.ItemId} no pertenece a esta guía.", 404);
+
+                if (itemDto.CantidadConfirmada < 0 || itemDto.CantidadConfirmada > item.Cantidad)
+                    throw new AbrilException($"La cantidad confirmada de '{item.Talla}' debe estar entre 0 y {item.Cantidad}.", 400);
+
+                item.CantidadConfirmada = itemDto.CantidadConfirmada;
+                item.ConfirmadoEn = DateTimeOffset.UtcNow;
+                item.ConfirmadoPorUsuarioSistemaId = confirmadoPorId;
+
+                var faltante = item.Cantidad - itemDto.CantidadConfirmada;
+                if (faltante > 0)
+                {
+                    // Al crear la guía ya se acreditó el destino con Cantidad completa — si llegó
+                    // menos, se corrige ese sobre-crédito para que el kardex no quede inflado.
+                    await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
+                    {
+                        AlmacenId = guia.AlmacenDestinoId.Value,
+                        ProductoId = item.ProductoId,
+                        Talla = item.Talla,
+                        Color = item.Color,
+                        TipoMovimiento = "SALIDA",
+                        Cantidad = faltante,
+                        ReferenciaTipo = "GUIA_REMISION_AJUSTE",
+                        ReferenciaId = guia.Id,
+                    }, confirmadoPorId);
+                }
+
+                if (item.PedidoItemId.HasValue)
+                {
+                    var pedidoItem = await ctx.PedidoItem.FindAsync(item.PedidoItemId.Value);
+                    if (pedidoItem != null) pedidoItem.CantidadConfirmadaMina += itemDto.CantidadConfirmada;
+                }
+            }
+
+            await ctx.SaveChangesAsync();
+
+            return await BuildDetail(ctx, id);
+        }
+
         private static async Task<GuiaRemisionDetailDto> BuildDetail(AppDbContext ctx, long id)
         {
             var guia = await ctx.GuiaRemision
@@ -288,6 +372,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 .Include(g => g.AlmacenDestino)
                 .Include(g => g.CreadoPor!).ThenInclude(u => u!.Persona)
                 .Include(g => g.Items).ThenInclude(i => i.Producto)
+                .Include(g => g.Items).ThenInclude(i => i.PedidoItem!).ThenInclude(pi => pi.Pedido)
+                .Include(g => g.Items).ThenInclude(i => i.ConfirmadoPor!).ThenInclude(u => u!.Persona)
                 .FirstOrDefaultAsync(g => g.Id == id)
                 ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
 
@@ -322,14 +408,25 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 CdrDescripcion = guia.CdrDescripcion,
                 EnviadoEn = guia.EnviadoEn,
                 RespondidoEn = guia.RespondidoEn,
+                ConfirmacionPendiente = guia.AlmacenDestinoId != null
+                    && (guia.Estado == "ENVIADA" || guia.Estado == "ACEPTADA")
+                    && guia.Items.All(i => i.ConfirmadoEn == null),
                 Items = guia.Items.Select(i => new GuiaRemisionItemDetailDto
                 {
                     Id = i.Id,
                     ProductoNombre = i.Producto!.Nombre,
                     ProductoCodigo = i.Producto.Codigo,
                     Talla = i.Talla,
+                    Color = i.Color,
                     Cantidad = i.Cantidad,
                     UnidadMedida = i.UnidadMedida,
+                    PedidoItemId = i.PedidoItemId,
+                    PedidoCodigo = i.PedidoItem?.Pedido?.Codigo,
+                    CantidadConfirmada = i.CantidadConfirmada,
+                    ConfirmadoEn = i.ConfirmadoEn,
+                    ConfirmadoPorNombre = i.ConfirmadoPor != null
+                        ? $"{i.ConfirmadoPor.Persona!.Apellidos} {i.ConfirmadoPor.Persona.Nombres}"
+                        : null,
                 }).ToList(),
             };
         }

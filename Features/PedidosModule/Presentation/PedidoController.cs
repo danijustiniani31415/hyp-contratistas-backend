@@ -62,6 +62,34 @@ namespace Abril_Backend.Features.PedidosModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpGet("pendientes-compra")]
+        public async Task<IActionResult> ListPendientesDeCompra()
+        {
+            if (!User.HasLbPermiso("COMPRA_CREAR"))
+                return StatusCode(403, new { message = "No tienes permiso para ver pendientes de compra." });
+            try
+            {
+                var scope = User.GetProyectosPermitidos("COMPRA_CREAR");
+                return Ok(await _service.ListPendientesDeCompra(scope.EsGlobal ? null : scope.ProyectoIds));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("pendientes-despacho")]
+        public async Task<IActionResult> ListPendientesDeDespacho()
+        {
+            if (!User.HasLbPermiso("GUIA_REMISION_CREAR"))
+                return StatusCode(403, new { message = "No tienes permiso para ver pendientes de despacho." });
+            try
+            {
+                var scope = User.GetProyectosPermitidos("GUIA_REMISION_CREAR");
+                return Ok(await _service.ListPendientesDeDespacho(scope.EsGlobal ? null : scope.ProyectoIds));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpGet("destinatarios")]
         public async Task<IActionResult> GetDestinatarios([FromQuery] int proyectoId)
         {

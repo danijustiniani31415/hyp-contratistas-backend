@@ -30,5 +30,14 @@ namespace Abril_Backend.Features.PedidosModule.Application.Interfaces
         /// flujo si un pedido de este proyecto cambiara de estado ahora mismo — para que el admin
         /// pueda verificar que los correos son los correctos antes de confiar en el flujo real.</summary>
         Task<PedidoDestinatariosDto> GetDestinatarios(int proyectoId);
+
+        /// <summary>Ítems de pedidos APROBADOs con saldo pendiente de compra — el panel de
+        /// Logística de "qué falta comprar", cruzando todos los pedidos activos. proyectosPermitidos
+        /// null = sin restricción de proyecto.</summary>
+        Task<List<PendienteCompraDto>> ListPendientesDeCompra(HashSet<int>? proyectosPermitidos);
+
+        /// <summary>Ítems ya recibidos en almacén (de Lima) listos para despachar con guía —
+        /// alimenta el selector "Despachar pedido" al crear una Guía de Remisión.</summary>
+        Task<List<PendienteDespachoDto>> ListPendientesDeDespacho(HashSet<int>? proyectosPermitidos);
     }
 }

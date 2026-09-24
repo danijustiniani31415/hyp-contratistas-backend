@@ -10,6 +10,7 @@ namespace Abril_Backend.Features.EppModule.Infrastructure.Models
         public long EntregaId { get; set; }
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }
 
         [ForeignKey(nameof(EntregaId))]

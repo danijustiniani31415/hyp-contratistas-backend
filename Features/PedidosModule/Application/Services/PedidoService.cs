@@ -46,7 +46,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
 
             return await ctx.UsuarioAsignacion
                 .Where(a => (a.FechaFin == null || a.FechaFin >= hoy) && (a.ProyectoId == null || a.ProyectoId == proyectoId))
-                .Where(a => rolIdsConPermiso.Contains(a.RolId))
+                .Where(a => rolIdsConPermiso.Contains(a.RolId) && a.Notificar)
                 .Join(ctx.UsuarioSistema.Where(u => u.Estado == "ACTIVO"), a => a.UsuarioSistemaId, u => u.Id, (a, u) => u.EmailLogin)
                 .Distinct()
                 .ToListAsync();
@@ -135,12 +135,15 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     ?? throw new AbrilException($"Producto {item.ProductoId} no encontrado.", 404);
                 if (producto.RequiereTalla && string.IsNullOrWhiteSpace(item.Talla))
                     throw new AbrilException($"El producto \"{producto.Nombre}\" requiere indicar la talla.", 400);
+                if (producto.RequiereColor && string.IsNullOrWhiteSpace(item.Color))
+                    throw new AbrilException($"El producto \"{producto.Nombre}\" requiere indicar el color.", 400);
 
                 ctx.PedidoItem.Add(new PedidoItem
                 {
                     PedidoId = pedido.Id,
                     ProductoId = item.ProductoId,
                     Talla = item.Talla,
+                    Color = item.Color,
                     CantidadSolicitada = item.CantidadSolicitada,
                 });
             }
@@ -351,7 +354,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             foreach (var item in pedido.Items)
             {
                 var stock = await ctx.Stock.FirstOrDefaultAsync(s =>
-                    s.AlmacenId == pedido.AlmacenId && s.ProductoId == item.ProductoId && s.Talla == item.Talla);
+                    s.AlmacenId == pedido.AlmacenId && s.ProductoId == item.ProductoId && s.Talla == item.Talla && s.Color == item.Color);
                 var disponible = stock?.CantidadActual ?? 0;
                 if (disponible < item.CantidadSolicitada)
                     faltantes.Add($"{item.Producto!.Nombre} (pide {item.CantidadSolicitada}, hay {disponible})");
@@ -366,6 +369,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     AlmacenId = pedido.AlmacenId,
                     ProductoId = item.ProductoId,
                     Talla = item.Talla,
+                    Color = item.Color,
                     TipoMovimiento = "SALIDA",
                     Cantidad = item.CantidadSolicitada,
                     ReferenciaTipo = "PEDIDO",
@@ -402,6 +406,71 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             await ctx.SaveChangesAsync();
 
             return await BuildDetail(ctx, id);
+        }
+
+        public async Task<List<PendienteCompraDto>> ListPendientesDeCompra(HashSet<int>? proyectosPermitidos)
+        {
+            using var ctx = _factory.CreateDbContext();
+
+            var query = ctx.PedidoItem
+                .Include(i => i.Pedido!).ThenInclude(p => p.Proyecto)
+                .Include(i => i.Producto)
+                .Where(i => i.Pedido!.Estado == "APROBADO" && i.CantidadEnCompra < i.CantidadSolicitada)
+                .AsQueryable();
+
+            if (proyectosPermitidos != null)
+                query = query.Where(i => proyectosPermitidos.Contains(i.Pedido!.ProyectoId));
+
+            return await query
+                .OrderBy(i => i.Pedido!.CreadoEn)
+                .Select(i => new PendienteCompraDto
+                {
+                    PedidoItemId = i.Id,
+                    PedidoId = i.PedidoId,
+                    PedidoCodigo = i.Pedido!.Codigo,
+                    ProyectoNombre = i.Pedido.Proyecto!.Nombre,
+                    ProductoId = i.ProductoId,
+                    ProductoNombre = i.Producto!.Nombre,
+                    Talla = i.Talla,
+                    Color = i.Color,
+                    CantidadSolicitada = i.CantidadSolicitada,
+                    CantidadEnCompra = i.CantidadEnCompra,
+                    CantidadPendienteDeCompra = i.CantidadSolicitada - i.CantidadEnCompra,
+                    PedidoCreadoEn = i.Pedido.CreadoEn,
+                })
+                .ToListAsync();
+        }
+
+        public async Task<List<PendienteDespachoDto>> ListPendientesDeDespacho(HashSet<int>? proyectosPermitidos)
+        {
+            using var ctx = _factory.CreateDbContext();
+
+            var query = ctx.PedidoItem
+                .Include(i => i.Pedido!).ThenInclude(p => p.Proyecto)
+                .Include(i => i.Producto)
+                .Where(i => i.Pedido!.Estado == "APROBADO" && i.CantidadRecibidaAlmacen > i.CantidadDespachada)
+                .AsQueryable();
+
+            if (proyectosPermitidos != null)
+                query = query.Where(i => proyectosPermitidos.Contains(i.Pedido!.ProyectoId));
+
+            return await query
+                .OrderBy(i => i.Pedido!.CreadoEn)
+                .Select(i => new PendienteDespachoDto
+                {
+                    PedidoItemId = i.Id,
+                    PedidoId = i.PedidoId,
+                    PedidoCodigo = i.Pedido!.Codigo,
+                    ProyectoNombre = i.Pedido.Proyecto!.Nombre,
+                    AlmacenId = i.Pedido.AlmacenId,
+                    ProductoId = i.ProductoId,
+                    ProductoNombre = i.Producto!.Nombre,
+                    Talla = i.Talla,
+                    Color = i.Color,
+                    UnidadMedida = i.Producto.UnidadMedida,
+                    CantidadPendienteDeDespacho = i.CantidadRecibidaAlmacen - i.CantidadDespachada,
+                })
+                .ToListAsync();
         }
 
         private static async Task<PedidoDetailDto> BuildDetail(AppDbContext ctx, long id)
@@ -445,8 +514,13 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     ProductoCodigo = i.Producto.Codigo,
                     UnidadMedida = i.Producto.UnidadMedida,
                     Talla = i.Talla,
+                    Color = i.Color,
                     CantidadSolicitada = i.CantidadSolicitada,
                     CantidadEntregada = i.CantidadEntregada,
+                    CantidadEnCompra = i.CantidadEnCompra,
+                    CantidadRecibidaAlmacen = i.CantidadRecibidaAlmacen,
+                    CantidadDespachada = i.CantidadDespachada,
+                    CantidadConfirmadaMina = i.CantidadConfirmadaMina,
                 }).ToList(),
             };
         }

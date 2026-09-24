@@ -51,6 +51,14 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpGet("reposicion-sugerida")]
+        public async Task<IActionResult> ListReposicionSugerida([FromQuery] int? almacenId)
+        {
+            try { return Ok(await _service.ListReposicionSugerida(almacenId)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpPost("umbrales")]
         public async Task<IActionResult> AjustarUmbrales([FromBody] AjustarUmbralesDto dto)
         {

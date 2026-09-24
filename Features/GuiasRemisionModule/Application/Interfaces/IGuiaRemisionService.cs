@@ -17,5 +17,13 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces
 
         /// <summary>Reintenta resolver el CDR de una guía que quedó en ENVIADA (ticket pendiente).</summary>
         Task<GuiaRemisionDetailDto> ConsultarEstado(long id, LbScopeProyectos scope);
+
+        /// <summary>
+        /// Confirma en el destino (mina) cuánto se recibió realmente de cada ítem — al crear la
+        /// guía ya se había acreditado el stock de destino de una (todo o nada); si acá confirman
+        /// menos, se ajusta ese sobre-crédito con una SALIDA y la diferencia vuelve a quedar
+        /// pendiente en el pedido de origen (si el ítem estaba ligado a uno).
+        /// </summary>
+        Task<GuiaRemisionDetailDto> ConfirmarRecepcion(long id, ConfirmarRecepcionDto dto, long confirmadoPorId, LbScopeProyectos scope);
     }
 }

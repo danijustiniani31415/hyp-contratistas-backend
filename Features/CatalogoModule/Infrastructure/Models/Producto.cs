@@ -20,6 +20,10 @@ namespace Abril_Backend.Features.CatalogoModule.Infrastructure.Models
         public bool RequiereTalla { get; set; }
         /// <summary>ROPA, CALZADO o GUANTES — qué catálogo fijo de lb_talla usar cuando RequiereTalla=true. Null si RequiereTalla=false.</summary>
         public string? TipoTalla { get; set; }
+        /// <summary>true para productos que además varían por color (pintura, chalecos, etc.) —
+        /// mismo patrón que RequiereTalla, pero con una sola lista plana (lb_catalogo_valor tipo
+        /// "COLOR", editable desde el front) en vez de un catálogo por tipo [DECIDIDO 2026-09-24].</summary>
+        public bool RequiereColor { get; set; }
         /// <summary>true para herramientas/equipos en préstamo (no se consumen, vuelven).</summary>
         public bool EsRetornable { get; set; }
         public bool Activo { get; set; } = true;

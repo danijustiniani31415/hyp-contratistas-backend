@@ -47,7 +47,9 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     ProductoCodigo = s.Producto.Codigo,
                     UnidadMedida = s.Producto.UnidadMedida,
                     Talla = s.Talla,
+                    Color = s.Color,
                     CantidadActual = s.CantidadActual,
+                    CostoPromedio = s.CostoPromedio,
                     StockMinimo = s.StockMinimo,
                     StockMaximo = s.StockMaximo,
                     BajoMinimo = s.CantidadActual < s.StockMinimo,
@@ -89,6 +91,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     AlmacenNombre = m.Almacen!.Nombre,
                     ProductoNombre = m.Producto!.Nombre,
                     Talla = m.Talla,
+                    Color = m.Color,
                     TipoMovimiento = m.TipoMovimiento,
                     Cantidad = m.Cantidad,
                     CostoUnitario = m.CostoUnitario,
@@ -142,32 +145,53 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     throw new AbrilException("Producto no encontrado.", 404);
 
                 // Asegura que exista la fila de stock antes de bloquearla — upsert nativo de
-                // Postgres, aprovecha el UNIQUE(almacen_id, producto_id, talla) de la tabla.
+                // Postgres, aprovecha el UNIQUE(almacen_id, producto_id, talla, color) de la tabla.
                 await ctx.Database.ExecuteSqlInterpolatedAsync($"""
-                    INSERT INTO lb_stock (almacen_id, producto_id, talla, cantidad_actual, actualizado_en)
-                    VALUES ({dto.AlmacenId}, {dto.ProductoId}, {dto.Talla}, 0, now())
-                    ON CONFLICT (almacen_id, producto_id, talla) DO NOTHING
+                    INSERT INTO lb_stock (almacen_id, producto_id, talla, color, cantidad_actual, costo_promedio, actualizado_en)
+                    VALUES ({dto.AlmacenId}, {dto.ProductoId}, {dto.Talla}, {dto.Color}, 0, 0, now())
+                    ON CONFLICT (almacen_id, producto_id, talla, color) DO NOTHING
                     """);
 
-                var cantidadActual = await ctx.Database
-                    .SqlQuery<decimal>($"""
-                        SELECT cantidad_actual AS "Value" FROM lb_stock
-                        WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla}
+                var stockActual = await ctx.Database
+                    .SqlQuery<StockActualRow>($"""
+                        SELECT cantidad_actual AS "CantidadActual", costo_promedio AS "CostoPromedio" FROM lb_stock
+                        WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla} AND color = {dto.Color}
                         FOR UPDATE
                         """)
                     .SingleAsync();
 
-                if (dto.TipoMovimiento == "SALIDA" && cantidadActual < dto.Cantidad)
-                    throw new AbrilException($"Stock insuficiente — quedan {cantidadActual} y se pidieron {dto.Cantidad}.", 400);
+                if (dto.TipoMovimiento == "SALIDA" && stockActual.CantidadActual < dto.Cantidad)
+                    throw new AbrilException($"Stock insuficiente — quedan {stockActual.CantidadActual} y se pidieron {dto.Cantidad}.", 400);
+
+                // Costeo por promedio ponderado [DECIDIDO 2026-09-24]: un INGRESO con costo conocido
+                // (compra) recalcula el promedio del almacén para ese producto; un INGRESO sin costo
+                // (ajuste manual) no lo toca, para no ensuciar el promedio con un costo desconocido.
+                // Una SALIDA nunca cambia el promedio — solo se valoriza a él, snapshot que queda
+                // grabado en el propio movimiento para no perder el costo histórico si el promedio
+                // sigue moviéndose después.
+                decimal? costoMovimiento = dto.CostoUnitario;
+                decimal? nuevoCostoPromedio = null;
+                if (dto.TipoMovimiento == "INGRESO" && dto.CostoUnitario.HasValue)
+                {
+                    var cantidadTotal = stockActual.CantidadActual + dto.Cantidad;
+                    nuevoCostoPromedio = cantidadTotal > 0
+                        ? ((stockActual.CantidadActual * stockActual.CostoPromedio) + (dto.Cantidad * dto.CostoUnitario.Value)) / cantidadTotal
+                        : dto.CostoUnitario.Value;
+                }
+                else if (dto.TipoMovimiento == "SALIDA" && costoMovimiento is null)
+                {
+                    costoMovimiento = stockActual.CostoPromedio;
+                }
 
                 ctx.Movimiento.Add(new Movimiento
                 {
                     AlmacenId = dto.AlmacenId,
                     ProductoId = dto.ProductoId,
                     Talla = dto.Talla,
+                    Color = dto.Color,
                     TipoMovimiento = dto.TipoMovimiento,
                     Cantidad = dto.Cantidad,
-                    CostoUnitario = dto.CostoUnitario,
+                    CostoUnitario = costoMovimiento,
                     ReferenciaTipo = dto.ReferenciaTipo,
                     ReferenciaId = dto.ReferenciaId,
                     UsuarioSistemaId = usuarioSistemaId,
@@ -176,13 +200,62 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                 await ctx.SaveChangesAsync();
 
                 var signo = dto.TipoMovimiento == "INGRESO" ? 1 : -1;
-                await ctx.Database.ExecuteSqlInterpolatedAsync($"""
-                    UPDATE lb_stock SET cantidad_actual = cantidad_actual + ({signo} * {dto.Cantidad}), actualizado_en = now()
-                    WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla}
-                    """);
+                if (nuevoCostoPromedio.HasValue)
+                {
+                    await ctx.Database.ExecuteSqlInterpolatedAsync($"""
+                        UPDATE lb_stock SET cantidad_actual = cantidad_actual + ({signo} * {dto.Cantidad}),
+                            costo_promedio = {nuevoCostoPromedio.Value}, actualizado_en = now()
+                        WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla} AND color = {dto.Color}
+                        """);
+                }
+                else
+                {
+                    await ctx.Database.ExecuteSqlInterpolatedAsync($"""
+                        UPDATE lb_stock SET cantidad_actual = cantidad_actual + ({signo} * {dto.Cantidad}), actualizado_en = now()
+                        WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla} AND color = {dto.Color}
+                        """);
+                }
 
                 await tx.CommitAsync();
             });
+        }
+
+        private class StockActualRow
+        {
+            public decimal CantidadActual { get; set; }
+            public decimal CostoPromedio { get; set; }
+        }
+
+        public async Task<List<ReposicionSugeridaDto>> ListReposicionSugerida(int? almacenId)
+        {
+            using var ctx = _factory.CreateDbContext();
+
+            var query = ctx.Stock
+                .Include(s => s.Almacen)
+                .Include(s => s.Producto)
+                .Where(s => s.CantidadActual < s.StockMinimo)
+                .AsQueryable();
+
+            if (almacenId.HasValue)
+                query = query.Where(s => s.AlmacenId == almacenId.Value);
+
+            var rows = await query.ToListAsync();
+
+            return rows.Select(s => new ReposicionSugeridaDto
+            {
+                AlmacenId = s.AlmacenId,
+                AlmacenNombre = s.Almacen!.Nombre,
+                ProductoId = s.ProductoId,
+                ProductoNombre = s.Producto!.Nombre,
+                Talla = s.Talla,
+                Color = s.Color,
+                CantidadActual = s.CantidadActual,
+                StockMinimo = s.StockMinimo,
+                StockMaximo = s.StockMaximo,
+                CantidadSugerida = (s.StockMaximo ?? s.StockMinimo) - s.CantidadActual,
+            })
+            .OrderBy(r => r.ProductoNombre)
+            .ToList();
         }
 
         public async Task AjustarUmbrales(AjustarUmbralesDto dto)
@@ -195,7 +268,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                 throw new AbrilException("Producto no encontrado.", 404);
 
             var stock = await ctx.Stock.FirstOrDefaultAsync(s =>
-                s.AlmacenId == dto.AlmacenId && s.ProductoId == dto.ProductoId && s.Talla == dto.Talla);
+                s.AlmacenId == dto.AlmacenId && s.ProductoId == dto.ProductoId && s.Talla == dto.Talla && s.Color == dto.Color);
 
             if (stock == null)
             {
@@ -204,6 +277,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     AlmacenId = dto.AlmacenId,
                     ProductoId = dto.ProductoId,
                     Talla = dto.Talla,
+                    Color = dto.Color,
                     CantidadActual = 0,
                     ActualizadoEn = DateTimeOffset.UtcNow,
                 };

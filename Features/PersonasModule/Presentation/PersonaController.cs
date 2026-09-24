@@ -155,6 +155,17 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpPost("{id:int}/usuario/reenviar-credenciales")]
+        public async Task<IActionResult> ReenviarCredenciales(int id)
+        {
+            try
+            {
+                return Ok(await _service.ReenviarCredenciales(id));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpPut("{id:int}/usuario/email")]
         public async Task<IActionResult> CambiarEmail(int id, [FromBody] CambiarEmailDto dto)
         {
@@ -172,6 +183,17 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
             try
             {
                 return Ok(await _service.NuevaAsignacion(id, dto, CurrentUsuarioSistemaId));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPut("{id:int}/asignaciones/{asignacionId:long}/notificar")]
+        public async Task<IActionResult> ToggleNotificarAsignacion(int id, long asignacionId, [FromBody] ToggleNotificarDto dto)
+        {
+            try
+            {
+                return Ok(await _service.ToggleNotificarAsignacion(id, asignacionId, dto.Notificar));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }

@@ -54,6 +54,16 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpPost("ordenes/desde-pedidos")]
+        public async Task<IActionResult> GenerarDesdePedidos([FromBody] GenerarOrdenCompraDesdePedidosDto dto)
+        {
+            if (!User.HasLbPermiso("COMPRA_CREAR"))
+                return StatusCode(403, new { message = "No tienes permiso para crear órdenes de compra." });
+            try { return Ok(await _service.GenerarDesdePedidos(dto, CurrentUsuarioSistemaId)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpGet("ordenes")]
         public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? estado, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
@@ -83,6 +93,20 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
             {
                 var scope = User.GetProyectosPermitidos("COMPRA_RECIBIR");
                 return Ok(await _service.RecibirItem(id, itemId, dto, CurrentUsuarioSistemaId, scope));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPost("ordenes/{id:long}/items/{itemId:long}/devolver")]
+        public async Task<IActionResult> DevolverItem(long id, long itemId, [FromBody] DevolverItemDto dto)
+        {
+            if (!User.HasLbPermiso("COMPRA_RECIBIR"))
+                return StatusCode(403, new { message = "No tienes permiso para devolver mercadería." });
+            try
+            {
+                var scope = User.GetProyectosPermitidos("COMPRA_RECIBIR");
+                return Ok(await _service.DevolverItem(id, itemId, dto, CurrentUsuarioSistemaId, scope));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }

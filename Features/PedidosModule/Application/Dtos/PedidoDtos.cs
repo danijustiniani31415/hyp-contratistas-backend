@@ -4,6 +4,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
     {
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal CantidadSolicitada { get; set; }
     }
 
@@ -43,8 +44,48 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
         public string? ProductoCodigo { get; set; }
         public string UnidadMedida { get; set; } = null!;
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal CantidadSolicitada { get; set; }
         public decimal? CantidadEntregada { get; set; }
+        public decimal CantidadEnCompra { get; set; }
+        public decimal CantidadRecibidaAlmacen { get; set; }
+        public decimal CantidadDespachada { get; set; }
+        public decimal CantidadConfirmadaMina { get; set; }
+    }
+
+    /// <summary>Ítem de un pedido APROBADO que todavía no está cubierto por una compra en curso —
+    /// alimenta el panel de Logística de "qué falta comprar" cruzando todos los pedidos activos.</summary>
+    public class PendienteCompraDto
+    {
+        public long PedidoItemId { get; set; }
+        public long PedidoId { get; set; }
+        public string PedidoCodigo { get; set; } = null!;
+        public string ProyectoNombre { get; set; } = null!;
+        public long ProductoId { get; set; }
+        public string ProductoNombre { get; set; } = null!;
+        public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
+        public decimal CantidadSolicitada { get; set; }
+        public decimal CantidadEnCompra { get; set; }
+        public decimal CantidadPendienteDeCompra { get; set; }
+        public DateTimeOffset PedidoCreadoEn { get; set; }
+    }
+
+    /// <summary>Ítem de un pedido APROBADO ya recibido en el almacén de Lima pero todavía no
+    /// despachado con guía — alimenta el selector "Despachar pedido" al crear una Guía de Remisión.</summary>
+    public class PendienteDespachoDto
+    {
+        public long PedidoItemId { get; set; }
+        public long PedidoId { get; set; }
+        public string PedidoCodigo { get; set; } = null!;
+        public string ProyectoNombre { get; set; } = null!;
+        public int AlmacenId { get; set; }
+        public long ProductoId { get; set; }
+        public string ProductoNombre { get; set; } = null!;
+        public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
+        public string UnidadMedida { get; set; } = null!;
+        public decimal CantidadPendienteDeDespacho { get; set; }
     }
 
     public class PedidoDetailDto

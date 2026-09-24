@@ -10,7 +10,10 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public string? ProductoCodigo { get; set; }
         public string UnidadMedida { get; set; } = null!;
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal CantidadActual { get; set; }
+        public decimal CostoPromedio { get; set; }
+        public decimal ValorTotal => CantidadActual * CostoPromedio;
         public decimal StockMinimo { get; set; }
         public decimal? StockMaximo { get; set; }
         public bool BajoMinimo { get; set; }
@@ -31,6 +34,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public int AlmacenId { get; set; }
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         /// <summary>INGRESO o SALIDA.</summary>
         public string TipoMovimiento { get; set; } = null!;
         public decimal Cantidad { get; set; }
@@ -40,11 +44,30 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public long? ReferenciaId { get; set; }
     }
 
+    /// <summary>Producto bajo su stock mínimo — sugerencia de reposición para el panel de
+    /// Logística [DECIDIDO 2026-09-24]. Sin ítem de pedido detrás: nace del umbral, no de una
+    /// solicitud puntual, así que la cantidad sugerida se puede editar libremente al generar la OC.</summary>
+    public class ReposicionSugeridaDto
+    {
+        public int AlmacenId { get; set; }
+        public string AlmacenNombre { get; set; } = null!;
+        public long ProductoId { get; set; }
+        public string ProductoNombre { get; set; } = null!;
+        public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
+        public decimal CantidadActual { get; set; }
+        public decimal StockMinimo { get; set; }
+        public decimal? StockMaximo { get; set; }
+        /// <summary>Sube hasta StockMaximo si está definido; si no, repone hasta el mínimo.</summary>
+        public decimal CantidadSugerida { get; set; }
+    }
+
     public class AjustarUmbralesDto
     {
         public int AlmacenId { get; set; }
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public decimal StockMinimo { get; set; }
         public decimal? StockMaximo { get; set; }
     }
@@ -55,6 +78,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public string AlmacenNombre { get; set; } = null!;
         public string ProductoNombre { get; set; } = null!;
         public string Talla { get; set; } = "";
+        public string Color { get; set; } = "";
         public string TipoMovimiento { get; set; } = null!;
         public decimal Cantidad { get; set; }
         public decimal? CostoUnitario { get; set; }

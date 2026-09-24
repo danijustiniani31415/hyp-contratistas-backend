@@ -56,7 +56,7 @@ namespace Abril_Backend.Features.EppModule.Application.Services
                     throw new AbrilException($"{producto.Nombre} no es un producto de categoría EPP.", 400);
 
                 var stock = await ctx.Stock.FirstOrDefaultAsync(s =>
-                    s.AlmacenId == dto.AlmacenId && s.ProductoId == item.ProductoId && s.Talla == item.Talla);
+                    s.AlmacenId == dto.AlmacenId && s.ProductoId == item.ProductoId && s.Talla == item.Talla && s.Color == item.Color);
                 var disponible = stock?.CantidadActual ?? 0;
                 if (disponible < item.Cantidad)
                     faltantes.Add($"{producto.Nombre} (pide {item.Cantidad}, hay {disponible})");
@@ -82,6 +82,7 @@ namespace Abril_Backend.Features.EppModule.Application.Services
                     EntregaId = entrega.Id,
                     ProductoId = item.ProductoId,
                     Talla = item.Talla,
+                    Color = item.Color,
                     Cantidad = item.Cantidad,
                 });
 
@@ -90,6 +91,7 @@ namespace Abril_Backend.Features.EppModule.Application.Services
                     AlmacenId = dto.AlmacenId,
                     ProductoId = item.ProductoId,
                     Talla = item.Talla,
+                    Color = item.Color,
                     TipoMovimiento = "SALIDA",
                     Cantidad = item.Cantidad,
                     ReferenciaTipo = "ENTREGA_EPP",
@@ -182,6 +184,7 @@ namespace Abril_Backend.Features.EppModule.Application.Services
                     ProductoNombre = i.Producto!.Nombre,
                     ProductoCodigo = i.Producto.Codigo,
                     Talla = i.Talla,
+                    Color = i.Color,
                     Cantidad = i.Cantidad,
                 }).ToList(),
             };

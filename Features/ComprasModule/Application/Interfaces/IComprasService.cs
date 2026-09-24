@@ -9,11 +9,17 @@ namespace Abril_Backend.Features.ComprasModule.Application.Interfaces
         Task<ProveedorDto> CrearProveedor(ProveedorCreateDto dto);
 
         Task<OrdenCompraDetailDto> Crear(OrdenCompraCreateDto dto, long solicitadoPorId);
+        Task<OrdenCompraDetailDto> GenerarDesdePedidos(GenerarOrdenCompraDesdePedidosDto dto, long solicitadoPorId);
         Task<OrdenCompraListResponseDto> List(string? search, string? estado, HashSet<int>? proyectosPermitidos, int page, int pageSize);
         Task<OrdenCompraDetailDto> GetById(long id);
 
         /// <summary>Registra una recepción parcial o total de UN ítem — repone stock por lo recibido.</summary>
         Task<OrdenCompraDetailDto> RecibirItem(long ordenId, long itemId, RecibirItemDto dto, long recibidoPorId, LbScopeProyectos scope);
         Task<OrdenCompraDetailDto> Cancelar(long id, LbScopeProyectos scope);
+
+        /// <summary>Devuelve al proveedor mercadería ya recibida (defectuosa/incorrecta) — genera una
+        /// Guía de Remisión real de salida, revierte la cantidad recibida del ítem y, si venía de un
+        /// pedido, también su trazabilidad de recepción en almacén.</summary>
+        Task<DevolverItemResultDto> DevolverItem(long ordenId, long itemId, DevolverItemDto dto, long usuarioId, LbScopeProyectos scope);
     }
 }

@@ -138,6 +138,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public string? ProyectoNombre { get; set; }
         public string? AlmacenNombre { get; set; }
         public DateOnly FechaInicio { get; set; }
+        public bool Notificar { get; set; }
     }
 
     public class PersonaDetailDto
@@ -154,6 +155,7 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public List<VinculoLaboralDto> Vinculos { get; set; } = new();
         public long? UsuarioSistemaId { get; set; }
         public string? EmailLogin { get; set; }
+        public string? EstadoUsuario { get; set; }
         public List<AsignacionDetalleDto> Asignaciones { get; set; } = new();
     }
 
@@ -225,10 +227,16 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
         public List<AlmacenCatalogoItemDto> Almacenes { get; set; } = new();
     }
 
+    public class ToggleNotificarDto
+    {
+        public bool Notificar { get; set; }
+    }
+
     public class NuevaAsignacionDto
     {
         public short RolId { get; set; }
         public int? ProyectoId { get; set; }
         public int? AlmacenId { get; set; }
+        public bool Notificar { get; set; } = true;
     }
 }

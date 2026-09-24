@@ -78,6 +78,20 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
             }
         }
 
+        [HttpPost("{id:long}/confirmar-recepcion")]
+        public async Task<IActionResult> ConfirmarRecepcion(long id, [FromBody] ConfirmarRecepcionDto dto)
+        {
+            if (!User.HasLbPermiso("GUIA_REMISION_CONFIRMAR"))
+                return StatusCode(403, new { message = "No tienes permiso para confirmar recepción de guías de remisión." });
+            try
+            {
+                var scope = User.GetProyectosPermitidos("GUIA_REMISION_CONFIRMAR");
+                return Ok(await _service.ConfirmarRecepcion(id, dto, CurrentUsuarioSistemaId, scope));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpPost("{id:long}/consultar-estado")]
         public async Task<IActionResult> ConsultarEstado(long id)
         {

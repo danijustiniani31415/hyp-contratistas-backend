@@ -23,6 +23,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string UnidadMedida { get; set; } = null!;
         public bool RequiereTalla { get; set; }
         public string? TipoTalla { get; set; }
+        public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
         public bool Activo { get; set; }
     }
@@ -52,6 +53,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string UnidadMedida { get; set; } = null!;
         public bool RequiereTalla { get; set; }
         public string? TipoTalla { get; set; }
+        public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
         public bool Activo { get; set; }
     }
@@ -65,6 +67,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string UnidadMedida { get; set; } = null!;
         public bool RequiereTalla { get; set; }
         public string? TipoTalla { get; set; }
+        public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
     }
 
