@@ -106,10 +106,30 @@ El deploy a producción es automático al pushear (el droplet levanta la imagen 
 3. Para cada archivo, en orden, copiarlo al droplet y ejecutarlo contra `hyp_app` — la contraseña de la base **nunca se escribe en esta skill ni en ningún archivo del repo**, se lee al vuelo desde el propio `appsettings.Production.json` del droplet:
    ```
    scp -q "Migrations_Manual/<archivo>.sql" "puente:/tmp/<archivo>.sql"
-   ssh puente "PGPASSWORD=\$(grep -oP '(?<=Password=)[^;]+' /opt/hyp-contratistas/appsettings.Production.json | head -1) psql -h localhost -U hyp_app -d hyp_app -f /tmp/<archivo>.sql"
+   ssh puente "PW=\$(grep -oP '(?<=Password=)[^;]+' /opt/hyp-contratistas/appsettings.Production.json | head -1 | xargs); PGPASSWORD=\$PW psql -h localhost -U hyp_app -d hyp_app -f /tmp/<archivo>.sql"
    ```
+   El `xargs` al final del `grep` es obligatorio, no cosmético: la contraseña real del droplet tiene un espacio final antes del `;` en el connection string, y sin recortarlo `PGPASSWORD` queda mal y el login a Postgres falla con "password authentication failed" (pasó el 2026-09-24).
 4. Si algún archivo tira un `ERROR:` real (no un `NOTICE:` de idempotencia tipo "already exists, skipping") — DETENERSE. No seguir con el resto de archivos ni con el push. Mostrar el error tal cual y preguntar cómo proceder; no reintentar solo ni "arreglar" la migración sin decírselo antes al usuario.
 5. Si algún archivo referencia una tabla/columna que a su vez depende de una migración **anterior** que tampoco se ha corrido (como pasó con `lb_catalogo_valor` el 2026-09-24), avisar que probablemente producción está atrasada de antes y ofrecer revisar `Migrations_Manual/` completo contra las tablas que existen hoy en `hyp_app`, no solo los archivos nuevos de este commit.
+
+### 6.5. Verificar que roles y permisos coincidan entre local y producción (solo repo backend)
+
+`lb_permiso`/`lb_rol`/`lb_rol_permiso`/`lb_usuario_asignacion` son data de referencia (seed), no
+código — nunca viajan solas por el flujo normal de migraciones, así que pueden divergir entre
+`hyp_local` y `hyp_app` sin que nadie lo note hasta que alguien queda bloqueado de una pantalla que
+sí debería poder usar (pasó el 2026-09-25: el admin de producción tenía asignado el rol
+`GERENTE_GENERAL` en vez de `ADMIN` — nadie lo notó durante meses porque ningún endpoint validaba
+permisos todavía). Correr esto cada vez que este paso 6 detecte migraciones nuevas relacionadas a
+permisos, o cuando el usuario reporte "no tengo acceso a X aunque debería":
+
+```
+ssh puente "PW=\$(grep -oP '(?<=Password=)[^;]+' /opt/hyp-contratistas/appsettings.Production.json | head -1 | xargs); PGPASSWORD=\$PW psql -h localhost -U hyp_app -d hyp_app -c \"SELECT r.codigo AS rol, p.codigo AS permiso FROM lb_rol_permiso rp JOIN lb_rol r ON r.id=rp.rol_id JOIN lb_permiso p ON p.id=rp.permiso_id ORDER BY r.codigo, p.codigo;\""
+```
+
+Comparar esa salida contra la misma query en `hyp_local`. Si hay diferencias, mostrárselas al
+usuario tal cual (rol/permiso de más o de menos en cada lado) y preguntar cómo reconciliar —
+**nunca** aplicar el ajuste de data solo, esto es una decisión de negocio (qué rol debe tener qué
+permiso), no un fix mecánico como sí lo es correr un `.sql` de esquema.
 
 ### 7. Confirmación antes de push (obligatoria — main es producción)
 
