@@ -5,6 +5,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
         public string Color { get; set; } = "";
+        public string? Observacion { get; set; }
         public decimal CantidadSolicitada { get; set; }
     }
 
@@ -45,6 +46,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
         public string UnidadMedida { get; set; } = null!;
         public string Talla { get; set; } = "";
         public string Color { get; set; } = "";
+        public string? Observacion { get; set; }
         public decimal CantidadSolicitada { get; set; }
         public decimal? CantidadEntregada { get; set; }
         public decimal CantidadEnCompra { get; set; }

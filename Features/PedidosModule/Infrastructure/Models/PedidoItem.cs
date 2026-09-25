@@ -11,6 +11,9 @@ namespace Abril_Backend.Features.PedidosModule.Infrastructure.Models
         public long ProductoId { get; set; }
         public string Talla { get; set; } = "";
         public string Color { get; set; } = "";
+        /// <summary>Nota puntual de este ítem (ej. "cualquier marca", "urgente") — independiente
+        /// de Pedido.Observacion, que es para todo el pedido.</summary>
+        public string? Observacion { get; set; }
         public decimal CantidadSolicitada { get; set; }
         /// <summary>Null hasta que se entrega. Hoy siempre = CantidadSolicitada (se valida stock
         /// completo antes de entregar) — separado de CantidadSolicitada para permitir entrega

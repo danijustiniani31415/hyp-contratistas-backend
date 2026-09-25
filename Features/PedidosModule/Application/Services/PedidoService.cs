@@ -144,6 +144,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     ProductoId = item.ProductoId,
                     Talla = item.Talla,
                     Color = item.Color,
+                    Observacion = item.Observacion,
                     CantidadSolicitada = item.CantidadSolicitada,
                 });
             }
@@ -515,6 +516,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     UnidadMedida = i.Producto.UnidadMedida,
                     Talla = i.Talla,
                     Color = i.Color,
+                    Observacion = i.Observacion,
                     CantidadSolicitada = i.CantidadSolicitada,
                     CantidadEntregada = i.CantidadEntregada,
                     CantidadEnCompra = i.CantidadEnCompra,
