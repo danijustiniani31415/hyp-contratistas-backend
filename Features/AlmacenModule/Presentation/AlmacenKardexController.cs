@@ -4,6 +4,7 @@ using Abril_Backend.Features.AlmacenModule.Application.Dtos;
 using Abril_Backend.Features.AlmacenModule.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Abril_Backend.Features.PersonasModule;
 
 namespace Abril_Backend.Features.AlmacenModule.Presentation
 {
@@ -42,6 +43,8 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
         [HttpPost("movimientos")]
         public async Task<IActionResult> RegistrarMovimiento([FromBody] RegistrarMovimientoDto dto)
         {
+            if (!User.HasLbPermiso("ALMACEN_AJUSTAR"))
+                return StatusCode(403, new { message = "No tienes permiso para registrar movimientos de almacén." });
             try
             {
                 await _service.RegistrarMovimiento(dto, CurrentUsuarioSistemaId);
@@ -62,6 +65,8 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
         [HttpPost("umbrales")]
         public async Task<IActionResult> AjustarUmbrales([FromBody] AjustarUmbralesDto dto)
         {
+            if (!User.HasLbPermiso("ALMACEN_AJUSTAR"))
+                return StatusCode(403, new { message = "No tienes permiso para ajustar umbrales de almacén." });
             try
             {
                 await _service.AjustarUmbrales(dto);

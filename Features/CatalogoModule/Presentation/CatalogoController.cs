@@ -3,6 +3,7 @@ using Abril_Backend.Features.CatalogoModule.Application.Dtos;
 using Abril_Backend.Features.CatalogoModule.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Abril_Backend.Features.PersonasModule;
 
 namespace Abril_Backend.Features.CatalogoModule.Presentation
 {
@@ -30,6 +31,8 @@ namespace Abril_Backend.Features.CatalogoModule.Presentation
         [HttpPost("categorias")]
         public async Task<IActionResult> CrearCategoria([FromBody] CategoriaCreateDto dto)
         {
+            if (!User.HasLbPermiso("CATALOGO_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar el catálogo." });
             try { return Ok(await _service.CrearCategoria(dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -70,6 +73,8 @@ namespace Abril_Backend.Features.CatalogoModule.Presentation
         [HttpPost("productos")]
         public async Task<IActionResult> CrearProducto([FromBody] ProductoCreateDto dto)
         {
+            if (!User.HasLbPermiso("CATALOGO_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar el catálogo." });
             try { return Ok(await _service.CrearProducto(dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -78,6 +83,8 @@ namespace Abril_Backend.Features.CatalogoModule.Presentation
         [HttpPut("productos/{id:long}")]
         public async Task<IActionResult> ActualizarProducto(long id, [FromBody] ProductoUpdateDto dto)
         {
+            if (!User.HasLbPermiso("CATALOGO_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar el catálogo." });
             try { return Ok(await _service.ActualizarProducto(id, dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }

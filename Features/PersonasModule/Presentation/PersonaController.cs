@@ -4,6 +4,7 @@ using Abril_Backend.Features.PersonasModule.Application.Dtos;
 using Abril_Backend.Features.PersonasModule.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Abril_Backend.Features.PersonasModule;
 
 namespace Abril_Backend.Features.PersonasModule.Presentation
 {
@@ -54,6 +55,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost("cargos")]
         public async Task<IActionResult> CrearCargo([FromBody] CargoCreateDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try { return Ok(await _service.CrearCargo(dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -62,6 +65,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPut("cargos/{id:int}")]
         public async Task<IActionResult> ActualizarCargo(int id, [FromBody] CargoUpdateDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try { return Ok(await _service.ActualizarCargo(id, dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -109,6 +114,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] PersonaCreateDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.Create(dto));
@@ -120,6 +127,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPut("{id:int}")]
         public async Task<IActionResult> ActualizarDatos(int id, [FromBody] PersonaUpdateDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try { return Ok(await _service.ActualizarDatos(id, dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -128,6 +137,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPut("{id:int}/planilla")]
         public async Task<IActionResult> ActualizarPlanilla(int id, [FromBody] PersonaPlanillaDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try { return Ok(await _service.ActualizarPlanilla(id, dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -136,6 +147,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost("{id:int}/vinculos")]
         public async Task<IActionResult> NuevoVinculo(int id, [FromBody] NuevoVinculoDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.NuevoVinculo(id, dto));
@@ -147,6 +160,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost("{id:int}/usuario")]
         public async Task<IActionResult> CrearUsuario(int id, [FromBody] CrearUsuarioDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.CrearUsuario(id, dto, CurrentUsuarioSistemaId));
@@ -158,6 +173,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost("{id:int}/usuario/reenviar-credenciales")]
         public async Task<IActionResult> ReenviarCredenciales(int id)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.ReenviarCredenciales(id));
@@ -169,6 +186,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPut("{id:int}/usuario/email")]
         public async Task<IActionResult> CambiarEmail(int id, [FromBody] CambiarEmailDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.CambiarEmail(id, dto));
@@ -180,6 +199,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost("{id:int}/asignaciones")]
         public async Task<IActionResult> NuevaAsignacion(int id, [FromBody] NuevaAsignacionDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.NuevaAsignacion(id, dto, CurrentUsuarioSistemaId));
@@ -191,6 +212,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPut("{id:int}/asignaciones/{asignacionId:long}/notificar")]
         public async Task<IActionResult> ToggleNotificarAsignacion(int id, long asignacionId, [FromBody] ToggleNotificarDto dto)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.ToggleNotificarAsignacion(id, asignacionId, dto.Notificar));
@@ -202,6 +225,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost("{id:int}/asignaciones/{asignacionId:long}/revocar")]
         public async Task<IActionResult> RevocarAsignacion(int id, long asignacionId)
         {
+            if (!User.HasLbPermiso("PERSONA_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar personas." });
             try
             {
                 return Ok(await _service.RevocarAsignacion(id, asignacionId));

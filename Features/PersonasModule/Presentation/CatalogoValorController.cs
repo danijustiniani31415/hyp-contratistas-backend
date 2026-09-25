@@ -3,6 +3,7 @@ using Abril_Backend.Features.PersonasModule.Application.Dtos;
 using Abril_Backend.Features.PersonasModule.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Abril_Backend.Features.PersonasModule;
 
 namespace Abril_Backend.Features.PersonasModule.Presentation
 {
@@ -31,6 +32,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPost]
         public async Task<IActionResult> Crear([FromBody] CatalogoValorCreateDto dto)
         {
+            if (!User.HasLbPermiso("CATALOGO_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar catálogos." });
             try { return Ok(await _service.Crear(dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
@@ -39,6 +42,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPut("{id:int}")]
         public async Task<IActionResult> Actualizar(int id, [FromBody] CatalogoValorUpdateDto dto)
         {
+            if (!User.HasLbPermiso("CATALOGO_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar catálogos." });
             try { return Ok(await _service.Actualizar(id, dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }

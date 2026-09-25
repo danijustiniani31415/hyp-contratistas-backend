@@ -4,6 +4,7 @@ using Abril_Backend.Features.PersonasModule.Application.Dtos;
 using Abril_Backend.Features.PersonasModule.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Abril_Backend.Features.PersonasModule;
 
 namespace Abril_Backend.Features.PersonasModule.Presentation
 {
@@ -34,6 +35,8 @@ namespace Abril_Backend.Features.PersonasModule.Presentation
         [HttpPut]
         public async Task<IActionResult> GuardarMes([FromBody] TareoGuardarDto dto)
         {
+            if (!User.HasLbPermiso("TAREO_REGISTRAR"))
+                return StatusCode(403, new { message = "No tienes permiso para registrar tareo." });
             try
             {
                 await _service.GuardarMes(dto, CurrentUsuarioSistemaId);
