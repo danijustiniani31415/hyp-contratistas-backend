@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Claims;
 using Abril_Backend.Application.Exceptions;
 using Abril_Backend.Features.GuiasRemisionModule.Application.Dtos;
@@ -26,6 +27,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
                 ? id
                 : throw new AbrilException("Token inválido.", 401);
 
+        /// <summary>Cualquiera de estos permisos habilita ver el listado/detalle — no solo
+        /// GUIA_REMISION_VER. Bug real 2026-09-25: el rol RESIDENTE tiene GUIA_REMISION_CONFIRMAR
+        /// pero no GUIA_REMISION_VER, así que no podía ni abrir la guía que debía confirmar.</summary>
+        private static readonly string[] PermisosDeLectura =
+            { "GUIA_REMISION_VER", "GUIA_REMISION_CREAR", "GUIA_REMISION_ENVIAR", "GUIA_REMISION_CONFIRMAR" };
+
         [HttpPost]
         public async Task<IActionResult> Crear([FromBody] GuiaRemisionCreateDto dto)
         {
@@ -39,11 +46,11 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
         [HttpGet]
         public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? estado, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            if (!User.HasLbPermiso("GUIA_REMISION_VER"))
+            if (!PermisosDeLectura.Any(User.HasLbPermiso))
                 return StatusCode(403, new { message = "No tienes permiso para ver guías de remisión." });
             try
             {
-                var scope = User.GetProyectosPermitidos("GUIA_REMISION_VER");
+                var scope = User.GetProyectosPermitidosUnion(PermisosDeLectura);
                 return Ok(await _service.List(search, estado, scope.EsGlobal ? null : scope.ProyectoIds, page, pageSize));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
@@ -53,7 +60,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
         [HttpGet("{id:long}")]
         public async Task<IActionResult> GetById(long id)
         {
-            if (!User.HasLbPermiso("GUIA_REMISION_VER"))
+            if (!PermisosDeLectura.Any(User.HasLbPermiso))
                 return StatusCode(403, new { message = "No tienes permiso para ver guías de remisión." });
             try { return Ok(await _service.GetById(id)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }

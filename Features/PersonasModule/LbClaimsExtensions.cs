@@ -73,5 +73,30 @@ namespace Abril_Backend.Features.PersonasModule
                 ProyectoIds = relevantes.Where(a => a.ProyectoId.HasValue).Select(a => a.ProyectoId!.Value).ToHashSet(),
             };
         }
+
+        /// <summary>
+        /// Unión de <see cref="GetProyectosPermitidos"/> sobre varios permisos que comparten el
+        /// mismo recurso (ver, crear, aprobar, entregar/confirmar...). Un endpoint de listado no
+        /// debe filtrar el scope por un solo permiso "principal" (ej. VER_TODOS) — quien solo
+        /// tiene el permiso de aprobar/entregar/confirmar igual necesita ver lo que le toca
+        /// procesar, no solo lo que ese permiso puntual cubre. Bug real 2026-09-25: un Residente
+        /// con PEDIDO_VISAR pero no PEDIDO_VER_TODOS no veía ningún pedido en la lista, y otro con
+        /// GUIA_REMISION_CONFIRMAR pero no GUIA_REMISION_VER no podía ni abrir la guía a confirmar.
+        /// Si el usuario no tiene ninguno de los códigos, devuelve scope vacío (no global, sin
+        /// proyectos) — el llamador decide si eso implica 403 o una lista vacía.
+        /// </summary>
+        public static LbScopeProyectos GetProyectosPermitidosUnion(this ClaimsPrincipal user, params string[] codigos)
+        {
+            var esGlobal = false;
+            var union = new HashSet<int>();
+            foreach (var codigo in codigos)
+            {
+                if (!user.HasLbPermiso(codigo)) continue;
+                var scope = user.GetProyectosPermitidos(codigo);
+                if (scope.EsGlobal) { esGlobal = true; continue; }
+                union.UnionWith(scope.ProyectoIds);
+            }
+            return esGlobal ? new LbScopeProyectos { EsGlobal = true } : new LbScopeProyectos { ProyectoIds = union };
+        }
     }
 }

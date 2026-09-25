@@ -41,7 +41,9 @@ namespace Abril_Backend.Features.HerramientasModule.Presentation
         {
             try
             {
-                var scope = User.GetProyectosPermitidos("HERRAMIENTA_PRESTAR");
+                // Unión con HERRAMIENTA_DEVOLVER: quien solo recibe devoluciones (sin poder
+                // prestar) igual necesita ver los préstamos abiertos para saber qué se devuelve.
+                var scope = User.GetProyectosPermitidosUnion("HERRAMIENTA_PRESTAR", "HERRAMIENTA_DEVOLVER");
                 return Ok(await _service.List(search, soloAbiertos, scope.EsGlobal ? null : scope.ProyectoIds, page, pageSize));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }

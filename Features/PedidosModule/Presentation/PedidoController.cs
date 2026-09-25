@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Claims;
 using Abril_Backend.Application.Exceptions;
 using Abril_Backend.Features.PedidosModule.Application.Dtos;
@@ -40,14 +41,25 @@ namespace Abril_Backend.Features.PedidosModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        /// <summary>Permisos que exigen ver pedidos de OTROS, no solo los propios — quien visa,
+        /// aprueba o entrega necesita ver lo que otros crearon, no solo lo que él mismo pidió
+        /// (bug real 2026-09-25: un Residente con solo PEDIDO_VISAR no veía nada en la lista
+        /// porque "soloPropios" dependía únicamente de PEDIDO_VER_TODOS).</summary>
+        private static readonly string[] PermisosDeRevision = { "PEDIDO_VER_TODOS", "PEDIDO_VISAR", "PEDIDO_APROBAR", "PEDIDO_ENTREGAR" };
+
         [HttpGet]
         public async Task<IActionResult> List([FromQuery] string? estado, [FromQuery] int? proyectoId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             try
             {
-                var soloPropios = !User.HasLbPermiso("PEDIDO_VER_TODOS");
-                var scope = User.GetProyectosPermitidos("PEDIDO_VER_TODOS");
-                var proyectosPermitidos = soloPropios || scope.EsGlobal ? null : scope.ProyectoIds;
+                var soloPropios = !PermisosDeRevision.Any(User.HasLbPermiso);
+                HashSet<int>? proyectosPermitidos = null;
+                if (!soloPropios)
+                {
+                    var scope = User.GetProyectosPermitidosUnion(PermisosDeRevision);
+                    proyectosPermitidos = scope.EsGlobal ? null : scope.ProyectoIds;
+                }
+
                 return Ok(await _service.List(estado, proyectoId, soloPropios, proyectosPermitidos, CurrentUsuarioSistemaId, page, pageSize));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }

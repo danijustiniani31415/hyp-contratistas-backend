@@ -69,7 +69,9 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
         {
             try
             {
-                var scope = User.GetProyectosPermitidos("COMPRA_CREAR");
+                // Unión con COMPRA_RECIBIR: quien solo recibe mercadería (sin poder crear
+                // órdenes) igual necesita verlas en la lista para saber qué recibir.
+                var scope = User.GetProyectosPermitidosUnion("COMPRA_CREAR", "COMPRA_RECIBIR");
                 return Ok(await _service.List(search, estado, scope.EsGlobal ? null : scope.ProyectoIds, page, pageSize));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
