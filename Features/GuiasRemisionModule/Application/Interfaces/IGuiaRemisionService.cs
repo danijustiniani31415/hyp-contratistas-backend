@@ -25,5 +25,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces
         /// pendiente en el pedido de origen (si el ítem estaba ligado a uno).
         /// </summary>
         Task<GuiaRemisionDetailDto> ConfirmarRecepcion(long id, ConfirmarRecepcionDto dto, long confirmadoPorId, LbScopeProyectos scope);
+
+        /// <summary>
+        /// Elimina una guía en BORRADOR (nunca transmitida a SUNAT): devuelve el stock con
+        /// movimientos de ajuste en el kardex (que nunca se borra), resta lo despachado del pedido
+        /// de origen y borra la guía con sus ítems. Una guía ya transmitida no se puede eliminar.
+        /// </summary>
+        Task Eliminar(long id, long eliminadoPorId, LbScopeProyectos scope);
     }
 }

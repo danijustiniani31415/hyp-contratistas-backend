@@ -365,6 +365,95 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
+        public async Task Eliminar(long id, long eliminadoPorId, LbScopeProyectos scope)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var guia = await ctx.GuiaRemision
+                .Include(g => g.AlmacenOrigen)
+                .Include(g => g.Items)
+                .FirstOrDefaultAsync(g => g.Id == id)
+                ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
+
+            if (guia.AlmacenOrigen?.ProyectoId is int proyectoId && !scope.Permite(proyectoId))
+                throw new AbrilException("No tienes permiso sobre el proyecto de origen de esta guía.", 403);
+
+            if (guia.Estado != "BORRADOR")
+                throw new AbrilException(
+                    $"Solo se pueden eliminar guías en BORRADOR (esta está {guia.Estado}). Una guía ya transmitida a SUNAT es un documento legal: requiere comunicación de baja.", 400);
+            if (guia.Items.Any(i => i.ConfirmadoEn != null))
+                throw new AbrilException("Esta guía ya tiene una recepción confirmada — no se puede eliminar.", 400);
+
+            // El kardex no se borra: lo que movió la guía se compensa con movimientos inversos.
+            // Se parte de los movimientos reales y no de los ítems, porque si la creación falló a
+            // mitad de camino puede haber guías con ítems pero sin (o con solo parte de) stock movido.
+            var movimientos = await ctx.Movimiento.AsNoTracking()
+                .Where(m => m.ReferenciaTipo == "GUIA_REMISION" && m.ReferenciaId == guia.Id)
+                .ToListAsync();
+            var yaRevertida = await ctx.Movimiento.AnyAsync(m => m.ReferenciaTipo == "GUIA_REMISION_ANULACION" && m.ReferenciaId == guia.Id);
+
+            if (movimientos.Count > 0 && !yaRevertida)
+            {
+                // Revertir un INGRESO en destino es una SALIDA y puede fallar si la mina ya consumió
+                // ese stock — se valida todo antes de mover nada para no dejar una reversa a medias.
+                var ingresosDestino = movimientos
+                    .Where(m => m.TipoMovimiento == "INGRESO")
+                    .GroupBy(m => new { m.AlmacenId, m.ProductoId, m.Talla, m.Color });
+                foreach (var g in ingresosDestino)
+                {
+                    var necesario = g.Sum(m => m.Cantidad);
+                    var disponible = await ctx.Stock.AsNoTracking()
+                        .Where(s => s.AlmacenId == g.Key.AlmacenId && s.ProductoId == g.Key.ProductoId && s.Talla == g.Key.Talla && s.Color == g.Key.Color)
+                        .Select(s => s.CantidadActual)
+                        .FirstOrDefaultAsync();
+                    if (disponible < necesario)
+                        throw new AbrilException(
+                            $"No se puede eliminar: el almacén de destino ya no tiene el stock que esta guía le acreditó (quedan {disponible} de {necesario}).", 400);
+                }
+
+                foreach (var m in movimientos.Where(m => m.TipoMovimiento == "INGRESO"))
+                {
+                    await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
+                    {
+                        AlmacenId = m.AlmacenId,
+                        ProductoId = m.ProductoId,
+                        Talla = m.Talla,
+                        Color = m.Color,
+                        TipoMovimiento = "SALIDA",
+                        Cantidad = m.Cantidad,
+                        ReferenciaTipo = "GUIA_REMISION_ANULACION",
+                        ReferenciaId = guia.Id,
+                    }, eliminadoPorId);
+                }
+                foreach (var m in movimientos.Where(m => m.TipoMovimiento == "SALIDA"))
+                {
+                    await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
+                    {
+                        AlmacenId = m.AlmacenId,
+                        ProductoId = m.ProductoId,
+                        Talla = m.Talla,
+                        Color = m.Color,
+                        TipoMovimiento = "INGRESO",
+                        Cantidad = m.Cantidad,
+                        CostoUnitario = m.CostoUnitario,
+                        ReferenciaTipo = "GUIA_REMISION_ANULACION",
+                        ReferenciaId = guia.Id,
+                    }, eliminadoPorId);
+                }
+            }
+
+            // Al crear la guía se sumó lo despachado al pedido de origen — se resta de vuelta.
+            foreach (var item in guia.Items.Where(i => i.PedidoItemId.HasValue))
+            {
+                var pedidoItem = await ctx.PedidoItem.FindAsync(item.PedidoItemId!.Value);
+                if (pedidoItem != null)
+                    pedidoItem.CantidadDespachada = Math.Max(0, pedidoItem.CantidadDespachada - item.Cantidad);
+            }
+
+            ctx.GuiaRemisionItem.RemoveRange(guia.Items);
+            ctx.GuiaRemision.Remove(guia);
+            await ctx.SaveChangesAsync();
+        }
+
         private static async Task<GuiaRemisionDetailDto> BuildDetail(AppDbContext ctx, long id)
         {
             var guia = await ctx.GuiaRemision

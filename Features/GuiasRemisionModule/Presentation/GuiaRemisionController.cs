@@ -67,6 +67,23 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        /// <summary>Elimina una guía en BORRADOR. Reusa GUIA_REMISION_CREAR a propósito: quien puede
+        /// crear guías puede deshacer las que aún no se transmitieron, sin permiso nuevo en BD.</summary>
+        [HttpDelete("{id:long}")]
+        public async Task<IActionResult> Eliminar(long id)
+        {
+            if (!User.HasLbPermiso("GUIA_REMISION_CREAR"))
+                return StatusCode(403, new { message = "No tienes permiso para eliminar guías de remisión." });
+            try
+            {
+                var scope = User.GetProyectosPermitidos("GUIA_REMISION_CREAR");
+                await _service.Eliminar(id, CurrentUsuarioSistemaId, scope);
+                return NoContent();
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpPost("{id:long}/enviar")]
         public async Task<IActionResult> Enviar(long id)
         {
