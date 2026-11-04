@@ -154,7 +154,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
 
                 var stockActual = await ctx.Database
                     .SqlQuery<StockActualRow>($"""
-                        SELECT cantidad_actual AS "CantidadActual", costo_promedio AS "CostoPromedio" FROM lb_stock
+                        SELECT cantidad_actual, costo_promedio FROM lb_stock
                         WHERE almacen_id = {dto.AlmacenId} AND producto_id = {dto.ProductoId} AND talla = {dto.Talla} AND color = {dto.Color}
                         FOR UPDATE
                         """)
