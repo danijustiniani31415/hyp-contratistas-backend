@@ -101,7 +101,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
         {
             using var ctx = _factory.CreateDbContext();
             return await ctx.GuiaConductor.AsNoTracking().OrderBy(c => c.Apellidos).ThenBy(c => c.Nombres)
-                .Select(c => new ConductorDto { Id = c.Id, NumDoc = c.NumDoc, Nombres = c.Nombres, Apellidos = c.Apellidos, Licencia = c.Licencia, Activo = c.Activo })
+                .Select(c => new ConductorDto { Id = c.Id, NumDoc = c.NumDoc, Nombres = c.Nombres, Apellidos = c.Apellidos, Licencia = c.Licencia, PersonaId = c.PersonaId, Activo = c.Activo })
                 .ToListAsync();
         }
 
@@ -137,9 +137,15 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             c.Nombres = nombres!;
             c.Apellidos = apellidos!;
             c.Licencia = licencia!;
+            // El vínculo con Personas se decide por el DNI, no por lo que mande el cliente: si ese DNI es de un
+            // trabajador registrado queda enlazado; si no, es un conductor externo.
+            c.PersonaId = await ctx.Persona.AsNoTracking()
+                .Where(p => p.TipoDocumento == "DNI" && p.NumeroDocumento == dni)
+                .Select(p => (int?)p.Id)
+                .FirstOrDefaultAsync();
             c.Activo = dto.Activo;
             await ctx.SaveChangesAsync();
-            return new ConductorDto { Id = c.Id, NumDoc = c.NumDoc, Nombres = c.Nombres, Apellidos = c.Apellidos, Licencia = c.Licencia, Activo = c.Activo };
+            return new ConductorDto { Id = c.Id, NumDoc = c.NumDoc, Nombres = c.Nombres, Apellidos = c.Apellidos, Licencia = c.Licencia, PersonaId = c.PersonaId, Activo = c.Activo };
         }
     }
 }

@@ -24,6 +24,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string Nombres { get; set; } = null!;
         public string Apellidos { get; set; } = null!;
         public string Licencia { get; set; } = null!;
+        /// <summary>Trabajador de Personas al que corresponde este conductor (null = externo).</summary>
+        public int? PersonaId { get; set; }
         public bool Activo { get; set; }
     }
 }

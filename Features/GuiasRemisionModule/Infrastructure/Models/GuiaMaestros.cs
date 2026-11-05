@@ -33,6 +33,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
         public string Nombres { get; set; } = null!;
         public string Apellidos { get; set; } = null!;
         public string Licencia { get; set; } = null!;
+        /// <summary>Si el conductor es un trabajador registrado en Personas (por su DNI); null = conductor externo.</summary>
+        public int? PersonaId { get; set; }
         public bool Activo { get; set; } = true;
     }
 }
