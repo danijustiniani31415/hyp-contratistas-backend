@@ -189,7 +189,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
 
         private XElement BuildDespatchLine(GuiaRemisionItem item, int lineId)
         {
-            return new XElement(Ns + "DespatchLine",
+            return new XElement(Cac + "DespatchLine",
                 new XElement(Cbc + "ID", lineId),
                 new XElement(Cbc + "DeliveredQuantity",
                     new XAttribute("unitCode", item.UnidadMedida),

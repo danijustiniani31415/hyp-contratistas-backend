@@ -13,7 +13,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
     {
         public long Id { get; set; }
         public string Serie { get; set; } = null!;
-        public long Numero { get; set; }
+        /// <summary>Correlativo SUNAT: null mientras es BORRADOR, se asigna recién al transmitir.</summary>
+        public long? Numero { get; set; }
         public string Estado { get; set; } = "BORRADOR";
 
         public string MotivoTraslado { get; set; } = "04";

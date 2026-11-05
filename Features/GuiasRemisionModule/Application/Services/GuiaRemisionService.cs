@@ -61,14 +61,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             if (dto.AlmacenDestinoId.HasValue && !await ctx.Almacen.AnyAsync(a => a.Id == dto.AlmacenDestinoId))
                 throw new AbrilException("Almacén de destino no encontrado.", 404);
 
-            var correlativo = await ctx.Database
-                .SqlQuery<long>($"""SELECT nextval('lb_guia_remision_correlativo') AS "Value" """)
-                .SingleAsync();
-
+            // El correlativo SUNAT NO se asigna acá: un borrador no es un documento fiscal y puede
+            // eliminarse. El número se toma al transmitir (ver Enviar), así no quedan huecos.
             var guia = new GuiaRemision
             {
                 Serie = _settings.Serie,
-                Numero = correlativo,
+                Numero = null,
                 Estado = "BORRADOR",
                 MotivoTraslado = dto.MotivoTraslado,
                 ModalidadTraslado = dto.ModalidadTraslado,
@@ -186,7 +184,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 .Select(g => new GuiaRemisionListItemDto
                 {
                     Id = g.Id,
-                    Codigo = $"{g.Serie}-{g.Numero:D8}",
+                    Codigo = g.Numero == null ? $"Borrador #{g.Id}" : $"{g.Serie}-{g.Numero:D8}",
                     Estado = g.Estado,
                     AlmacenOrigenNombre = g.AlmacenOrigen!.Nombre,
                     AlmacenDestinoNombre = g.AlmacenDestino != null ? g.AlmacenDestino.Nombre : null,
@@ -230,6 +228,16 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             // comprobante, así que se reintenta con el mismo número una vez corregido el dato.
             if (guia.Estado != "BORRADOR" && guia.Estado != "RECHAZADA")
                 throw new AbrilException($"Esta guía ya fue transmitida (estado {guia.Estado}) — no se puede reenviar.", 400);
+
+            // Correlativo SUNAT: se toma recién ahora y queda fijo en la guía, de modo que un reintento
+            // (error de red, rechazo por formato) reenvía con el MISMO número y no consume otro.
+            if (guia.Numero == null)
+            {
+                guia.Numero = await ctx.Database
+                    .SqlQuery<long>($"""SELECT nextval('lb_guia_remision_correlativo') AS "Value" """)
+                    .SingleAsync();
+                await ctx.SaveChangesAsync();
+            }
 
             var xmlSinFirmar = _xmlBuilder.Build(guia);
             var (xmlFirmado, digestValue) = _xmlSigner.Firmar(xmlSinFirmar);
@@ -382,9 +390,10 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             if (guia.AlmacenOrigen?.ProyectoId is int proyectoId && !scope.Permite(proyectoId))
                 throw new AbrilException("No tienes permiso sobre el proyecto de origen de esta guía.", 403);
 
-            if (guia.Estado != "BORRADOR")
+            // RECHAZADA: SUNAT no registró el comprobante, así que no hay documento legal que dar de baja.
+            if (guia.Estado != "BORRADOR" && guia.Estado != "RECHAZADA")
                 throw new AbrilException(
-                    $"Solo se pueden eliminar guías en BORRADOR (esta está {guia.Estado}). Una guía ya transmitida a SUNAT es un documento legal: requiere comunicación de baja.", 400);
+                    $"Solo se pueden eliminar guías en BORRADOR o RECHAZADA (esta está {guia.Estado}). Una guía ya transmitida a SUNAT es un documento legal: requiere comunicación de baja.", 400);
             if (guia.Items.Any(i => i.ConfirmadoEn != null))
                 throw new AbrilException("Esta guía ya tiene una recepción confirmada — no se puede eliminar.", 400);
 

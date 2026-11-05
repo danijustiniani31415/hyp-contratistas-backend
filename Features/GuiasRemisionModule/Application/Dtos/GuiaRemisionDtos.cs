@@ -69,8 +69,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
     {
         public long Id { get; set; }
         public string Serie { get; set; } = null!;
-        public long Numero { get; set; }
-        public string Codigo => $"{Serie}-{Numero:D8}";
+        public long? Numero { get; set; }
+        public string Codigo => Numero == null ? $"Borrador #{Id}" : $"{Serie}-{Numero:D8}";
         public string Estado { get; set; } = null!;
 
         public string MotivoTraslado { get; set; } = null!;
