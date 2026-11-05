@@ -22,6 +22,8 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public NuevoProductoDto? NuevoProducto { get; set; }
         public string Talla { get; set; } = "";
         public string Color { get; set; } = "";
+        /// <summary>Texto original del Excel: si la fila se vinculó a un producto, el sistema lo aprende como alias.</summary>
+        public string? Alias { get; set; }
         public decimal Cantidad { get; set; }
         public decimal? CostoUnitario { get; set; }
     }

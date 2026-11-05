@@ -62,6 +62,32 @@ namespace Abril_Backend.Features.CatalogoModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpGet("productos/alias")]
+        public async Task<IActionResult> ListAlias()
+        {
+            try { return Ok(await _service.ListAlias()); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("productos/uso")]
+        public async Task<IActionResult> ListProductosConUso()
+        {
+            try { return Ok(await _service.ListProductosConUso()); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPost("productos/duplicados/resolver")]
+        public async Task<IActionResult> ResolverDuplicados([FromBody] ResolverDuplicadosDto dto)
+        {
+            if (!User.HasLbPermiso("CATALOGO_GESTIONAR"))
+                return StatusCode(403, new { message = "No tienes permiso para administrar el catálogo." });
+            try { return Ok(await _service.ResolverDuplicados(dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpGet("productos/{id:long}")]
         public async Task<IActionResult> GetProducto(long id)
         {

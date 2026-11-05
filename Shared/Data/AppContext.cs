@@ -81,6 +81,7 @@ namespace Abril_Backend.Infrastructure.Data
         // ── Las Bravas / HP Constructores: Catálogo Maestro (Fase 1, punto 2) ──
         public DbSet<CategoriaProducto> CategoriaProducto { get; set; }
         public DbSet<Producto> Producto { get; set; }
+        public DbSet<ProductoAlias> ProductoAlias { get; set; }
         public DbSet<Talla> Talla { get; set; }
         // ── Las Bravas / HP Constructores: Almacén / Kardex (Fase 1, punto 3) ──
         public DbSet<Stock> Stock { get; set; }

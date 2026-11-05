@@ -96,10 +96,101 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             using var ctx = _factory.CreateDbContext();
             var producto = await ctx.Producto.Include(p => p.Categoria).FirstOrDefaultAsync(p => p.Id == id)
                 ?? throw new AbrilException("Producto no encontrado.", 404);
-            return ToDetailDto(producto);
+            var detalle = ToDetailDto(producto);
+            detalle.Alias = await ctx.ProductoAlias.AsNoTracking()
+                .Where(a => a.ProductoId == id).OrderBy(a => a.Alias).Select(a => a.Alias).ToListAsync();
+            return detalle;
         }
 
         private static readonly string[] TiposTallaValidos = { "ROPA", "CALZADO", "GUANTES" };
+
+        // ── Alias y limpieza de duplicados ──────────────────────────────────
+
+        /// <summary>Escritura sin tildes, espacios ni signos: «Arco-Sierra» y «arco sierra» dan la misma clave.</summary>
+        public static string ClaveAlias(string texto)
+        {
+            var d = (texto ?? "").Normalize(System.Text.NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in d)
+            {
+                if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.NonSpacingMark) continue;
+                if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Todo lo que referencia a un producto: si aparece acá, desactivarlo afectaría historial.</summary>
+        private const string ReferenciasSql =
+            "SELECT producto_id FROM lb_stock UNION ALL SELECT producto_id FROM lb_movimiento " +
+            "UNION ALL SELECT producto_id FROM lb_pedido_item UNION ALL SELECT producto_id FROM lb_orden_compra_item " +
+            "UNION ALL SELECT producto_id FROM lb_guia_remision_item UNION ALL SELECT producto_id FROM lb_entrega_epp_item " +
+            "UNION ALL SELECT producto_id FROM lb_prestamo_item";
+
+        public async Task<List<ProductoAliasDto>> ListAlias()
+        {
+            using var ctx = _factory.CreateDbContext();
+            return await ctx.ProductoAlias.AsNoTracking().OrderBy(a => a.ProductoId)
+                .Select(a => new ProductoAliasDto { ProductoId = a.ProductoId, Alias = a.Alias }).ToListAsync();
+        }
+
+        public async Task<List<long>> ListProductosConUso()
+        {
+            using var ctx = _factory.CreateDbContext();
+            return await ctx.Database
+                .SqlQueryRaw<long>("SELECT DISTINCT producto_id AS \"Value\" FROM (" + ReferenciasSql + ") x WHERE producto_id IS NOT NULL")
+                .ToListAsync();
+        }
+
+        public async Task AgregarAlias(long productoId, string alias)
+        {
+            var texto = (alias ?? "").Trim();
+            var clave = ClaveAlias(texto);
+            if (clave.Length < 3) return;
+
+            using var ctx = _factory.CreateDbContext();
+            var producto = await ctx.Producto.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productoId)
+                ?? throw new AbrilException("Producto no encontrado.", 404);
+            if (ClaveAlias(producto.Nombre) == clave) return;
+            if (await ctx.ProductoAlias.AnyAsync(a => a.AliasNorm == clave)) return;
+
+            ctx.ProductoAlias.Add(new ProductoAlias { ProductoId = productoId, Alias = texto, AliasNorm = clave, CreadoEn = DateTimeOffset.UtcNow });
+            await ctx.SaveChangesAsync();
+        }
+
+        public async Task<ResolverDuplicadosResultDto> ResolverDuplicados(ResolverDuplicadosDto dto)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var principal = await ctx.Producto.FirstOrDefaultAsync(p => p.Id == dto.PrincipalId && p.Activo)
+                ?? throw new AbrilException("El producto principal no existe o está inactivo.", 404);
+
+            var resultado = new ResolverDuplicadosResultDto();
+            foreach (var id in dto.DuplicadoIds.Distinct().Where(i => i != dto.PrincipalId))
+            {
+                var dup = await ctx.Producto.FirstOrDefaultAsync(p => p.Id == id);
+                if (dup == null) { resultado.Omitidos.Add($"El producto {id} no existe."); continue; }
+
+                // Se vuelve a comprobar acá: no se confía en lo que diga la pantalla.
+                var usos = await ctx.Database
+                    .SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM (" + ReferenciasSql + ") x WHERE producto_id = {0}", id)
+                    .SingleAsync();
+                if (usos > 0)
+                {
+                    resultado.Omitidos.Add($"«{dup.Nombre}» tiene stock, movimientos o documentos: no se desactiva (hay que resolverlo a mano).");
+                    continue;
+                }
+
+                // Su nombre y sus alias pasan al principal, así «ARCO SIERRA» se reconoce solo en próximas cargas.
+                var clave = ClaveAlias(dup.Nombre);
+                foreach (var a in await ctx.ProductoAlias.Where(a => a.ProductoId == id).ToListAsync()) a.ProductoId = principal.Id;
+                if (clave != ClaveAlias(principal.Nombre) && !await ctx.ProductoAlias.AnyAsync(a => a.AliasNorm == clave))
+                    ctx.ProductoAlias.Add(new ProductoAlias { ProductoId = principal.Id, Alias = dup.Nombre, AliasNorm = clave, CreadoEn = DateTimeOffset.UtcNow });
+
+                dup.Activo = false;
+                await ctx.SaveChangesAsync();
+                resultado.Desactivados++;
+            }
+            return resultado;
+        }
 
         private static string? LimpiarMarca(string? marca) => string.IsNullOrWhiteSpace(marca) ? null : marca.Trim();
 
@@ -190,6 +281,24 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             producto.RequiereColor = dto.RequiereColor;
             producto.EsRetornable = dto.EsRetornable;
             producto.Activo = dto.Activo;
+
+            if (dto.Alias != null)
+            {
+                var nuevos = dto.Alias.Select(a => (a ?? "").Trim()).Where(a => a.Length > 0)
+                    .GroupBy(ClaveAlias).Select(g => g.First())
+                    .Where(a => ClaveAlias(a).Length >= 3 && ClaveAlias(a) != ClaveAlias(producto.Nombre)).ToList();
+                var existentes = await ctx.ProductoAlias.Where(a => a.ProductoId == id).ToListAsync();
+                var clavesNuevas = nuevos.Select(ClaveAlias).ToHashSet();
+                ctx.ProductoAlias.RemoveRange(existentes.Where(a => !clavesNuevas.Contains(a.AliasNorm)));
+                foreach (var texto in nuevos)
+                {
+                    var clave = ClaveAlias(texto);
+                    if (existentes.Any(a => a.AliasNorm == clave)) continue;
+                    if (await ctx.ProductoAlias.AnyAsync(a => a.AliasNorm == clave && a.ProductoId != id))
+                        throw new AbrilException($"El alias «{texto}» ya pertenece a otro producto.", 409);
+                    ctx.ProductoAlias.Add(new ProductoAlias { ProductoId = id, Alias = texto, AliasNorm = clave, CreadoEn = DateTimeOffset.UtcNow });
+                }
+            }
             await ctx.SaveChangesAsync();
 
             if (producto.Categoria == null || producto.Categoria.Id != dto.CategoriaId)

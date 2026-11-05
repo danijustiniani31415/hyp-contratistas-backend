@@ -102,6 +102,13 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     }
                     r.ProductoId = productoId;
 
+                    // Si el texto del Excel no era el nombre del producto, se aprende como alias para la próxima vez.
+                    // Un fallo acá nunca debe impedir el ingreso de stock.
+                    if (!string.IsNullOrWhiteSpace(fila.Alias))
+                    {
+                        try { await _catalogo.AgregarAlias(productoId, fila.Alias); } catch (Exception) { /* alias opcional */ }
+                    }
+
                     // La talla solo aplica a productos que la exigen; en los demás se ignora lo que traiga el Excel.
                     string talla;
                     string color;

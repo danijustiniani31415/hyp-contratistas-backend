@@ -58,6 +58,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
         public bool Activo { get; set; }
+        /// <summary>Otras formas de escribir el nombre (el sistema las aprende; también se pueden editar).</summary>
+        public List<string> Alias { get; set; } = new();
     }
 
     public class ProductoCreateDto
@@ -73,6 +75,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string? TipoTalla { get; set; }
         public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
+        /// <summary>En una edición reemplaza la lista de alias; null = dejarla como está.</summary>
+        public List<string>? Alias { get; set; }
     }
 
     public class ProductoUpdateDto : ProductoCreateDto
@@ -86,5 +90,25 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public long Id { get; set; }
         public string Nombre { get; set; } = null!;
         public double Score { get; set; }
+    }
+
+    public class ProductoAliasDto
+    {
+        public long ProductoId { get; set; }
+        public string Alias { get; set; } = null!;
+    }
+
+    public class ResolverDuplicadosDto
+    {
+        /// <summary>Producto que se conserva.</summary>
+        public long PrincipalId { get; set; }
+        /// <summary>Productos repetidos que se desactivan; su nombre pasa a ser alias del principal.</summary>
+        public List<long> DuplicadoIds { get; set; } = new();
+    }
+
+    public class ResolverDuplicadosResultDto
+    {
+        public int Desactivados { get; set; }
+        public List<string> Omitidos { get; set; } = new();
     }
 }
