@@ -82,6 +82,8 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public string TipoMovimiento { get; set; } = null!;
         public decimal Cantidad { get; set; }
         public decimal? CostoUnitario { get; set; }
+        /// <summary>Por qué se movió el stock (GUIA_REMISION, CARGA_EXCEL…); null = ajuste manual.</summary>
+        public string? ReferenciaTipo { get; set; }
         public string? UsuarioNombre { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
     }

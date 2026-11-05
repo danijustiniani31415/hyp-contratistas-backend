@@ -95,6 +95,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     TipoMovimiento = m.TipoMovimiento,
                     Cantidad = m.Cantidad,
                     CostoUnitario = m.CostoUnitario,
+                    ReferenciaTipo = m.ReferenciaTipo,
                     UsuarioNombre = m.UsuarioSistema != null && m.UsuarioSistema.Persona != null
                         ? m.UsuarioSistema.Persona.Apellidos + " " + m.UsuarioSistema.Persona.Nombres
                         : null,
