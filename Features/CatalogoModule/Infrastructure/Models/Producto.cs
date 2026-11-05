@@ -12,6 +12,11 @@ namespace Abril_Backend.Features.CatalogoModule.Infrastructure.Models
         public long Id { get; set; }
         public string? Codigo { get; set; }
         public string Nombre { get; set; } = null!;
+        /// <summary>
+        /// Marca (Stanley, Truper, 3M…). Cada marca es otro producto con su propio stock: el nombre ya la
+        /// incluye (ver CatalogoService.ComponerNombre) y este campo permite reconocerla al importar y filtrar.
+        /// </summary>
+        public string? Marca { get; set; }
         public string? Descripcion { get; set; }
         public int CategoriaId { get; set; }
         /// <summary>UND, PAR, KG, GAL, etc.</summary>

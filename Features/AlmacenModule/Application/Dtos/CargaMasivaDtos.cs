@@ -4,6 +4,8 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
     public class NuevoProductoDto
     {
         public string Nombre { get; set; } = "";
+        /// <summary>Marca detectada o escrita: se guarda aparte y se agrega al nombre si no la menciona.</summary>
+        public string? Marca { get; set; }
         public int CategoriaId { get; set; }
         public string UnidadMedida { get; set; } = "UND";
         public bool RequiereTalla { get; set; }

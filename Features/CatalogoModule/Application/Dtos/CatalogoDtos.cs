@@ -18,6 +18,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public long Id { get; set; }
         public string? Codigo { get; set; }
         public string Nombre { get; set; } = null!;
+        public string? Marca { get; set; }
         public string CategoriaNombre { get; set; } = null!;
         public string CategoriaTipo { get; set; } = null!;
         public string UnidadMedida { get; set; } = null!;
@@ -47,6 +48,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public long Id { get; set; }
         public string? Codigo { get; set; }
         public string Nombre { get; set; } = null!;
+        public string? Marca { get; set; }
         public string? Descripcion { get; set; }
         public int CategoriaId { get; set; }
         public string CategoriaNombre { get; set; } = null!;
@@ -62,6 +64,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
     {
         public string? Codigo { get; set; }
         public string Nombre { get; set; } = null!;
+        /// <summary>Opcional. Si viene y el nombre no la contiene, se agrega al final del nombre.</summary>
+        public string? Marca { get; set; }
         public string? Descripcion { get; set; }
         public int CategoriaId { get; set; }
         public string UnidadMedida { get; set; } = null!;

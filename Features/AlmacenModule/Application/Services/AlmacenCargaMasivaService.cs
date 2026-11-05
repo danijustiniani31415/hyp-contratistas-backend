@@ -3,6 +3,7 @@ using Abril_Backend.Features.AlmacenModule.Application.Dtos;
 using Abril_Backend.Features.AlmacenModule.Application.Interfaces;
 using Abril_Backend.Features.CatalogoModule.Application.Dtos;
 using Abril_Backend.Features.CatalogoModule.Application.Interfaces;
+using Abril_Backend.Features.CatalogoModule.Application.Services;
 using Abril_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -61,7 +62,10 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                         if (string.IsNullOrWhiteSpace(nombre))
                             throw new AbrilException("El producto nuevo necesita un nombre.", 400);
 
-                        var clave = nombre.ToLowerInvariant();
+                        // El nombre completo (con la marca) es lo que identifica al producto: «Flexómetro 5m Truper»
+                        // y «Flexómetro 5m Stanley» son productos distintos, cada uno con su propio stock.
+                        var marca = string.IsNullOrWhiteSpace(nuevo.Marca) ? null : nuevo.Marca.Trim();
+                        var clave = CatalogoService.ComponerNombre(nombre, marca).ToLowerInvariant();
                         if (creadosEnEstaCarga.TryGetValue(clave, out var yaCreado))
                         {
                             productoId = yaCreado;
@@ -82,6 +86,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                                 var creado = await _catalogo.CrearProducto(new ProductoCreateDto
                                 {
                                     Nombre = nombre,
+                                    Marca = marca,
                                     CategoriaId = nuevo.CategoriaId,
                                     UnidadMedida = string.IsNullOrWhiteSpace(nuevo.UnidadMedida) ? "UND" : nuevo.UnidadMedida.Trim().ToUpperInvariant(),
                                     RequiereTalla = nuevo.RequiereTalla,

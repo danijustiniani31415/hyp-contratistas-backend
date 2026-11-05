@@ -69,6 +69,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
                     Id = p.Id,
                     Codigo = p.Codigo,
                     Nombre = p.Nombre,
+                    Marca = p.Marca,
                     CategoriaNombre = p.Categoria!.Nombre,
                     CategoriaTipo = p.Categoria.Tipo,
                     UnidadMedida = p.UnidadMedida,
@@ -100,6 +101,24 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
 
         private static readonly string[] TiposTallaValidos = { "ROPA", "CALZADO", "GUANTES" };
 
+        private static string? LimpiarMarca(string? marca) => string.IsNullOrWhiteSpace(marca) ? null : marca.Trim();
+
+        /// <summary>
+        /// Nombre completo del producto: si tiene marca y el nombre todavía no la menciona (como palabra completa),
+        /// se agrega al final («Flexómetro 5m» + «Truper» → «Flexómetro 5m Truper»). Así todos los selectores del
+        /// sistema distinguen una marca de otra sin tocar cada pantalla.
+        /// </summary>
+        public static string ComponerNombre(string nombre, string? marca)
+        {
+            nombre = (nombre ?? "").Trim();
+            marca = LimpiarMarca(marca);
+            if (marca == null) return nombre;
+            var yaLaTiene = System.Text.RegularExpressions.Regex.IsMatch(
+                nombre, $@"(?<![\p{{L}}\p{{N}}]){System.Text.RegularExpressions.Regex.Escape(marca)}(?![\p{{L}}\p{{N}}])",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return yaLaTiene ? nombre : $"{nombre} {marca}";
+        }
+
         private static string? ValidarTipoTalla(bool requiereTalla, string? tipoTalla)
         {
             if (!requiereTalla) return null;
@@ -125,7 +144,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             var producto = new Producto
             {
                 Codigo = string.IsNullOrWhiteSpace(dto.Codigo) ? null : dto.Codigo,
-                Nombre = dto.Nombre,
+                Nombre = ComponerNombre(dto.Nombre, dto.Marca),
+                Marca = LimpiarMarca(dto.Marca),
                 Descripcion = dto.Descripcion,
                 CategoriaId = dto.CategoriaId,
                 UnidadMedida = dto.UnidadMedida,
@@ -160,7 +180,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             }
 
             producto.Codigo = string.IsNullOrWhiteSpace(dto.Codigo) ? null : dto.Codigo;
-            producto.Nombre = dto.Nombre;
+            producto.Nombre = ComponerNombre(dto.Nombre, dto.Marca);
+            producto.Marca = LimpiarMarca(dto.Marca);
             producto.Descripcion = dto.Descripcion;
             producto.CategoriaId = dto.CategoriaId;
             producto.UnidadMedida = dto.UnidadMedida;
@@ -202,6 +223,7 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             Id = p.Id,
             Codigo = p.Codigo,
             Nombre = p.Nombre,
+            Marca = p.Marca,
             Descripcion = p.Descripcion,
             CategoriaId = p.CategoriaId,
             CategoriaNombre = p.Categoria?.Nombre ?? "",
