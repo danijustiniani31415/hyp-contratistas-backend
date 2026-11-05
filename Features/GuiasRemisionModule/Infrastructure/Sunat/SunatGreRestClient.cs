@@ -147,13 +147,16 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             if (string.IsNullOrWhiteSpace(arcCdr))
                 return new SunatGreConsultaResultado { CdrGenerado = false };
 
-            var (codigo, descripcion) = LeerCdr(Convert.FromBase64String(arcCdr));
+            var (codigo, descripcion, cdrXml) = LeerCdr(Convert.FromBase64String(arcCdr));
             return new SunatGreConsultaResultado
             {
                 CdrGenerado = true,
                 Aceptado = codigo == "0",
                 CodigoRespuesta = codigo,
                 Descripcion = descripcion,
+                CdrXml = cdrXml,
+                // El QR oficial lo emite SUNAT al aceptar la guía: se busca en su respuesta y en el CDR.
+                QrUrl = ExtraerQrUrl(body) ?? ExtraerQrUrl(cdrXml),
             };
         }
 
@@ -170,7 +173,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             return ms.ToArray();
         }
 
-        private static (string? codigo, string? descripcion) LeerCdr(byte[] cdrZipBytes)
+        private static (string? codigo, string? descripcion, string xmlTexto) LeerCdr(byte[] cdrZipBytes)
         {
             using var ms = new MemoryStream(cdrZipBytes);
             using var zip = new ZipArchive(ms, ZipArchiveMode.Read);
@@ -178,11 +181,28 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
                 ?? throw new InvalidOperationException("El ZIP de respuesta (CDR) de SUNAT no contiene un XML.");
 
             using var reader = new StreamReader(entry.Open());
-            var cdrXml = System.Xml.Linq.XDocument.Parse(reader.ReadToEnd());
+            var xmlTexto = reader.ReadToEnd();
+            var cdrXml = System.Xml.Linq.XDocument.Parse(xmlTexto);
 
             var codigo = cdrXml.Descendants().FirstOrDefault(e => e.Name.LocalName == "ResponseCode")?.Value;
             var descripcion = cdrXml.Descendants().FirstOrDefault(e => e.Name.LocalName == "Description")?.Value;
-            return (codigo, descripcion);
+            return (codigo, descripcion, xmlTexto);
+        }
+
+        /// <summary>
+        /// Busca el enlace del QR oficial (…/descargaqr?hashqr=…) en un texto de SUNAT. Acepta la URL completa o,
+        /// si SUNAT entrega solo el campo hashqr, arma la URL con el formato que muestra el QR de sus propias guías.
+        /// Devuelve null si no hay nada: así queda claro que SUNAT no lo entregó y no se inventa uno.
+        /// </summary>
+        private static string? ExtraerQrUrl(string? texto)
+        {
+            if (string.IsNullOrWhiteSpace(texto)) return null;
+            var url = System.Text.RegularExpressions.Regex.Match(texto, @"https?://[^\s""'<>\\]*hashqr=[^\s""'<>\\]+");
+            if (url.Success) return System.Net.WebUtility.HtmlDecode(url.Value);
+            var hash = System.Text.RegularExpressions.Regex.Match(texto, @"""hashqr""\s*:\s*""([^""]+)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return hash.Success
+                ? "https://e-factura.sunat.gob.pe/v1/contribuyente/gre/comprobantes/descargaqr?hashqr=" + Uri.EscapeDataString(hash.Groups[1].Value)
+                : null;
         }
     }
 }

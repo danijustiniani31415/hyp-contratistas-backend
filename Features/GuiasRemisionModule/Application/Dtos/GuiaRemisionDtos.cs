@@ -130,6 +130,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public List<ConductorSecundarioDto> ConductoresSecundarios { get; set; } = new();
         public List<VehiculoSecundarioDto> VehiculosSecundarios { get; set; } = new();
 
+        /// <summary>Enlace del QR oficial de SUNAT; null si SUNAT no lo entregó (el PDF usa uno provisional).</summary>
+        public string? QrUrl { get; set; }
+
         public string? AnulacionMotivo { get; set; }
         public string? AnulacionConstancia { get; set; }
         public DateTimeOffset? AnuladaEn { get; set; }

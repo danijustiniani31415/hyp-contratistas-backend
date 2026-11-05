@@ -65,6 +65,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
 
         public string? XmlNombreArchivo { get; set; }
         public string? XmlHashFirma { get; set; }
+        /// <summary>XML firmado tal como se envió a SUNAT: respaldo legal, no se pierde aunque cambien los datos.</summary>
+        public string? XmlFirmado { get; set; }
+        /// <summary>XML del CDR que entregó SUNAT al aceptar o rechazar la guía.</summary>
+        public string? CdrXml { get; set; }
+        /// <summary>Enlace del QR oficial de SUNAT (descargaqr?hashqr=…), si lo entregó.</summary>
+        public string? QrUrl { get; set; }
         public string? Ticket { get; set; }
         public string? CdrCodigoRespuesta { get; set; }
         public string? CdrDescripcion { get; set; }

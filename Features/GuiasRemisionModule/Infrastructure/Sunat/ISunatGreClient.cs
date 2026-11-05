@@ -16,6 +16,10 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
         public bool Aceptado { get; set; }
         public string? CodigoRespuesta { get; set; }
         public string? Descripcion { get; set; }
+        /// <summary>XML del CDR tal como lo entregó SUNAT: constancia legal, se conserva.</summary>
+        public string? CdrXml { get; set; }
+        /// <summary>Enlace oficial del QR (descargaqr?hashqr=...) si SUNAT lo entregó en su respuesta o en el CDR.</summary>
+        public string? QrUrl { get; set; }
     }
 
     public interface ISunatGreClient

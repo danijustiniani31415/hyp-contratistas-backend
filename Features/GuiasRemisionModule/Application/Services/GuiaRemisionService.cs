@@ -393,6 +393,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
 
             guia.XmlNombreArchivo = nombreArchivo;
             guia.XmlHashFirma = digestValue;
+            guia.XmlFirmado = xmlFirmado;
+            guia.CdrXml = null;
+            guia.QrUrl = null;
             guia.EnviadoEn = DateTimeOffset.UtcNow;
             guia.Ticket = envio.NumTicket;
             guia.Estado = "ENVIADA";
@@ -415,6 +418,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     {
                         guia.CdrCodigoRespuesta = consulta.CodigoRespuesta;
                         guia.CdrDescripcion = consulta.Descripcion;
+                        guia.CdrXml = consulta.CdrXml;
+                        guia.QrUrl = consulta.QrUrl;
                         guia.Estado = consulta.Aceptado ? "ACEPTADA" : "RECHAZADA";
                         guia.RespondidoEn = DateTimeOffset.UtcNow;
                         await ctx.SaveChangesAsync();
@@ -444,6 +449,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             {
                 guia.CdrCodigoRespuesta = consulta.CodigoRespuesta;
                 guia.CdrDescripcion = consulta.Descripcion;
+                guia.CdrXml = consulta.CdrXml;
+                guia.QrUrl = consulta.QrUrl;
                 guia.Estado = consulta.Aceptado ? "ACEPTADA" : "RECHAZADA";
                 guia.RespondidoEn = DateTimeOffset.UtcNow;
                 await ctx.SaveChangesAsync();
@@ -704,6 +711,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     .Select(c => new ConductorSecundarioDto { NumDoc = c.NumDoc, Nombres = c.Nombres, Apellidos = c.Apellidos, Licencia = c.Licencia }).ToList(),
                 VehiculosSecundarios = GuiaSecundarios.Leer<VehiculoSecundario>(guia.VehiculosSecundariosJson)
                     .Select(v => new VehiculoSecundarioDto { Placa = v.Placa, NroCirculacion = v.NroCirculacion }).ToList(),
+                QrUrl = guia.QrUrl,
                 AnulacionMotivo = guia.AnulacionMotivo,
                 AnulacionConstancia = guia.AnulacionConstancia,
                 AnuladaEn = guia.AnuladaEn,
