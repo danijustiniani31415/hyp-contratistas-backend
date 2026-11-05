@@ -114,7 +114,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
 
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
-            var cdrGenerado = root.TryGetProperty("indCdrGenerado", out var ind) && ind.GetBoolean();
+            // SUNAT lo devuelve como texto ("1"/"0"); aceptar también booleano o número por si cambia.
+            var cdrGenerado = root.TryGetProperty("indCdrGenerado", out var ind) && ind.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.String => ind.GetString() is "1" or "true" or "True",
+                JsonValueKind.Number => ind.GetInt32() == 1,
+                _ => false,
+            };
             if (!cdrGenerado)
                 return new SunatGreConsultaResultado { CdrGenerado = false };
 
