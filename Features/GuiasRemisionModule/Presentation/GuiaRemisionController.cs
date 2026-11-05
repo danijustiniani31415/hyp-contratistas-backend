@@ -70,14 +70,15 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
         /// <summary>Elimina una guía en BORRADOR. Reusa GUIA_REMISION_CREAR a propósito: quien puede
         /// crear guías puede deshacer las que aún no se transmitieron, sin permiso nuevo en BD.</summary>
         [HttpPost("{id:long}/anular")]
-        public async Task<IActionResult> Anular(long id)
+        public async Task<IActionResult> Anular(long id, [FromBody] AnularGuiaDto dto)
         {
-            if (!User.HasLbPermiso("GUIA_REMISION_CREAR"))
+            // GUIA_REMISION_ENVIAR es el permiso de "transmitir y anular" — anular es más delicado que crear.
+            if (!User.HasLbPermiso("GUIA_REMISION_ENVIAR"))
                 return StatusCode(403, new { message = "No tienes permiso para anular guías de remisión." });
             try
             {
-                var scope = User.GetProyectosPermitidos("GUIA_REMISION_CREAR");
-                await _service.Anular(id, CurrentUsuarioSistemaId, scope);
+                var scope = User.GetProyectosPermitidos("GUIA_REMISION_ENVIAR");
+                await _service.Anular(id, CurrentUsuarioSistemaId, scope, dto);
                 return Ok(new { message = "Guía anulada." });
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }

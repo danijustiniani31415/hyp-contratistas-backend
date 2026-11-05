@@ -25,6 +25,28 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public List<ConfirmarRecepcionItemDto> Items { get; set; } = new();
     }
 
+    public class ConductorSecundarioDto
+    {
+        public string NumDoc { get; set; } = "";
+        public string Nombres { get; set; } = "";
+        public string Apellidos { get; set; } = "";
+        public string Licencia { get; set; } = "";
+    }
+
+    public class VehiculoSecundarioDto
+    {
+        public string Placa { get; set; } = "";
+        public string? NroCirculacion { get; set; }
+    }
+
+    /// <summary>Datos que se exigen para anular una guía ACEPTADA: la baja ante SUNAT se hace en SOL.</summary>
+    public class AnularGuiaDto
+    {
+        public string Motivo { get; set; } = "";
+        /// <summary>Número de la constancia de baja que entrega SOL (Empresas > Guía de Remisión electrónica > Baja de GRE).</summary>
+        public string ConstanciaBaja { get; set; } = "";
+    }
+
     public class GuiaRemisionCreateDto
     {
         public string MotivoTraslado { get; set; } = "04";
@@ -46,6 +68,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string? ConductorLicencia { get; set; }
         public string? ConductorDni { get; set; }
         public string? ConductorApellidos { get; set; }
+        public string? VehiculoNroCirculacion { get; set; }
+        public List<ConductorSecundarioDto> ConductoresSecundarios { get; set; } = new();
+        public List<VehiculoSecundarioDto> VehiculosSecundarios { get; set; } = new();
 
         public string? Observacion { get; set; }
         public string? ReferenciaTipo { get; set; }
@@ -101,6 +126,13 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string? ConductorLicencia { get; set; }
         public string? ConductorDni { get; set; }
         public string? ConductorApellidos { get; set; }
+        public string? VehiculoNroCirculacion { get; set; }
+        public List<ConductorSecundarioDto> ConductoresSecundarios { get; set; } = new();
+        public List<VehiculoSecundarioDto> VehiculosSecundarios { get; set; } = new();
+
+        public string? AnulacionMotivo { get; set; }
+        public string? AnulacionConstancia { get; set; }
+        public DateTimeOffset? AnuladaEn { get; set; }
 
         // Datos para la representación impresa (PDF con QR) de la guía.
         public string EmisorRuc { get; set; } = null!;

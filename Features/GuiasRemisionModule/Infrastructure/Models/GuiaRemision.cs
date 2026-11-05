@@ -39,6 +39,19 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
         /// <summary>Apellidos del conductor (los nombres van en ConductorNombres). Null en guías antiguas: ahí
         /// ConductorNombres trae "Apellidos Nombres" juntos y el XML los separa por posición.</summary>
         public string? ConductorApellidos { get; set; }
+        /// <summary>Tarjeta de circulación / certificado de habilitación del vehículo principal.</summary>
+        public string? VehiculoNroCirculacion { get; set; }
+        /// <summary>JSON de <see cref="ConductorSecundario"/> — ver GuiaSecundarios.</summary>
+        public string? ConductoresSecundariosJson { get; set; }
+        /// <summary>JSON de <see cref="VehiculoSecundario"/> — ver GuiaSecundarios.</summary>
+        public string? VehiculosSecundariosJson { get; set; }
+
+        // Anulación: la baja ante SUNAT se hace en SOL (no hay API); acá queda el rastro de quién la
+        // registró, por qué y con qué constancia de baja, para poder auditarla.
+        public string? AnulacionMotivo { get; set; }
+        public string? AnulacionConstancia { get; set; }
+        public long? AnuladaPorUsuarioSistemaId { get; set; }
+        public DateTimeOffset? AnuladaEn { get; set; }
 
         public string? Observacion { get; set; }
         public string? ReferenciaTipo { get; set; }

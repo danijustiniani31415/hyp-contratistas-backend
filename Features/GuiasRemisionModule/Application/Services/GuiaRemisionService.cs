@@ -58,6 +58,21 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     throw new AbrilException("El DNI del conductor debe tener 8 dígitos.", 400);
             }
 
+            // Conductores y vehículos adicionales (la guía de SUNAT admite principal + secundarios).
+            if (dto.ConductoresSecundarios.Count > 5 || dto.VehiculosSecundarios.Count > 5)
+                throw new AbrilException("Máximo 5 conductores adicionales y 5 vehículos adicionales.", 400);
+            foreach (var c in dto.ConductoresSecundarios)
+            {
+                if (!GuiaValidaciones.DniValido(c.NumDoc?.Trim()) || string.IsNullOrWhiteSpace(c.Nombres) || string.IsNullOrWhiteSpace(c.Apellidos)
+                    || !GuiaValidaciones.LicenciaValida(GuiaValidaciones.NormalizarLicencia(c.Licencia)))
+                    throw new AbrilException("Cada conductor adicional requiere DNI (8 dígitos), apellidos, nombres y licencia válida.", 400);
+            }
+            foreach (var v in dto.VehiculosSecundarios)
+            {
+                if (!GuiaValidaciones.PlacaValida(GuiaValidaciones.NormalizarPlaca(v.Placa)))
+                    throw new AbrilException("La placa de cada vehículo adicional debe tener 6 o 7 letras/números.", 400);
+            }
+
             using var ctx = _factory.CreateDbContext();
 
             var almacenOrigen = await ctx.Almacen.FirstOrDefaultAsync(a => a.Id == dto.AlmacenOrigenId)
@@ -85,6 +100,19 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 TransportistaRuc = dto.TransportistaRuc,
                 TransportistaRazonSocial = dto.TransportistaRazonSocial,
                 VehiculoPlaca = GuiaValidaciones.NormalizarPlaca(dto.VehiculoPlaca),
+                VehiculoNroCirculacion = string.IsNullOrWhiteSpace(dto.VehiculoNroCirculacion) ? null : dto.VehiculoNroCirculacion.Trim(),
+                ConductoresSecundariosJson = GuiaSecundarios.Escribir(dto.ConductoresSecundarios.Select(c => new ConductorSecundario
+                {
+                    NumDoc = c.NumDoc.Trim(),
+                    Nombres = c.Nombres.Trim().ToUpperInvariant(),
+                    Apellidos = c.Apellidos.Trim().ToUpperInvariant(),
+                    Licencia = GuiaValidaciones.NormalizarLicencia(c.Licencia)!,
+                }).ToList()),
+                VehiculosSecundariosJson = GuiaSecundarios.Escribir(dto.VehiculosSecundarios.Select(v => new VehiculoSecundario
+                {
+                    Placa = GuiaValidaciones.NormalizarPlaca(v.Placa)!,
+                    NroCirculacion = string.IsNullOrWhiteSpace(v.NroCirculacion) ? null : v.NroCirculacion.Trim(),
+                }).ToList()),
                 ConductorNombres = dto.ConductorNombres,
                 ConductorLicencia = GuiaValidaciones.NormalizarLicencia(dto.ConductorLicencia),
                 ConductorDni = dto.ConductorDni?.Trim(),
@@ -528,8 +556,17 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
         /// borra: es un documento legal y queda su historial). La baja ante SUNAT se hace aparte en SOL
         /// (Empresas > Guía de Remisión electrónica > Baja de GRE); acá solo se refleja en el sistema.
         /// </summary>
-        public async Task Anular(long id, long anuladaPorId, LbScopeProyectos scope)
+        public async Task Anular(long id, long anuladaPorId, LbScopeProyectos scope, AnularGuiaDto dto)
         {
+            // SUNAT no ofrece baja por API: el sistema no puede comprobar que se hizo. Por eso se exige el
+            // motivo y el número de la constancia de baja de SOL, y se guardan con quién y cuándo (auditable).
+            var motivo = dto.Motivo?.Trim();
+            var constancia = dto.ConstanciaBaja?.Trim();
+            if (string.IsNullOrWhiteSpace(motivo) || motivo.Length < 5)
+                throw new AbrilException("Indica el motivo de la anulación (mínimo 5 caracteres).", 400);
+            if (string.IsNullOrWhiteSpace(constancia) || constancia.Length < 3)
+                throw new AbrilException("Indica el número de la constancia de baja que entregó SOL: primero se da la baja en SUNAT y recién después se anula acá.", 400);
+
             using var ctx = _factory.CreateDbContext();
             var guia = await ctx.GuiaRemision
                 .Include(g => g.AlmacenOrigen)
@@ -549,6 +586,10 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
 
             guia.Estado = "ANULADA";
             guia.DespachoAplicado = false;
+            guia.AnulacionMotivo = motivo;
+            guia.AnulacionConstancia = constancia;
+            guia.AnuladaPorUsuarioSistemaId = anuladaPorId;
+            guia.AnuladaEn = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
         }
 
@@ -658,6 +699,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 ConductorLicencia = guia.ConductorLicencia,
                 ConductorDni = guia.ConductorDni,
                 ConductorApellidos = guia.ConductorApellidos,
+                VehiculoNroCirculacion = guia.VehiculoNroCirculacion,
+                ConductoresSecundarios = GuiaSecundarios.Leer<ConductorSecundario>(guia.ConductoresSecundariosJson)
+                    .Select(c => new ConductorSecundarioDto { NumDoc = c.NumDoc, Nombres = c.Nombres, Apellidos = c.Apellidos, Licencia = c.Licencia }).ToList(),
+                VehiculosSecundarios = GuiaSecundarios.Leer<VehiculoSecundario>(guia.VehiculosSecundariosJson)
+                    .Select(v => new VehiculoSecundarioDto { Placa = v.Placa, NroCirculacion = v.NroCirculacion }).ToList(),
+                AnulacionMotivo = guia.AnulacionMotivo,
+                AnulacionConstancia = guia.AnulacionConstancia,
+                AnuladaEn = guia.AnuladaEn,
                 EmisorRuc = _settings.Ruc,
                 EmisorRazonSocial = _settings.RazonSocial,
                 AlmacenOrigenDireccion = guia.AlmacenOrigen.Direccion,

@@ -163,6 +163,18 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
                     new XElement(Cbc + "JobTitle", "Principal"),
                     new XElement(Cac + "IdentityDocumentReference",
                         new XElement(Cbc + "ID", guia.ConductorLicencia))));
+
+                // Conductores adicionales: mismo bloque con cargo "Secundario".
+                foreach (var sec in GuiaSecundarios.Leer<ConductorSecundario>(guia.ConductoresSecundariosJson))
+                {
+                    stage.Add(new XElement(Cac + "DriverPerson",
+                        new XElement(Cbc + "ID", new XAttribute("schemeID", "1"), sec.NumDoc),
+                        new XElement(Cbc + "FirstName", sec.Nombres),
+                        new XElement(Cbc + "FamilyName", sec.Apellidos),
+                        new XElement(Cbc + "JobTitle", "Secundario"),
+                        new XElement(Cac + "IdentityDocumentReference",
+                            new XElement(Cbc + "ID", sec.Licencia))));
+                }
             }
             shipment.Add(stage);
 
@@ -193,8 +205,22 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
 
             if (guia.ModalidadTraslado == "02" && guia.VehiculoPlaca != null)
             {
-                shipment.Add(new XElement(Cac + "TransportHandlingUnit",
-                    new XElement(Cac + "TransportEquipment", new XElement(Cbc + "ID", guia.VehiculoPlaca))));
+                // Tarjeta de circulación (si se registró) dentro de ApplicableTransportMeans; los vehículos
+                // adicionales (remolque/semirremolque) van como AttachedTransportEquipment del principal.
+                static XElement? Circulacion(string? nro) => string.IsNullOrWhiteSpace(nro)
+                    ? null
+                    : new XElement(Cac + "ApplicableTransportMeans", new XElement(Cbc + "RegistrationNationalityID", nro));
+
+                var equipo = new XElement(Cac + "TransportEquipment",
+                    new XElement(Cbc + "ID", guia.VehiculoPlaca),
+                    Circulacion(guia.VehiculoNroCirculacion));
+                foreach (var sec in GuiaSecundarios.Leer<VehiculoSecundario>(guia.VehiculosSecundariosJson))
+                {
+                    equipo.Add(new XElement(Cac + "AttachedTransportEquipment",
+                        new XElement(Cbc + "ID", sec.Placa),
+                        Circulacion(sec.NroCirculacion)));
+                }
+                shipment.Add(new XElement(Cac + "TransportHandlingUnit", equipo));
             }
 
             return shipment;

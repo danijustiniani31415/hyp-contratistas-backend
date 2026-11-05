@@ -34,6 +34,6 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces
         Task Eliminar(long id, long eliminadoPorId, LbScopeProyectos scope);
 
         /// <summary>Anula una guía ACEPTADA: revierte stock/pedido y queda ANULADA (la baja ante SUNAT se hace en SOL).</summary>
-        Task Anular(long id, long anuladaPorId, LbScopeProyectos scope);
+        Task Anular(long id, long anuladaPorId, LbScopeProyectos scope, AnularGuiaDto dto);
     }
 }
