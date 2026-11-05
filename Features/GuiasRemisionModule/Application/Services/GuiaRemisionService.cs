@@ -234,6 +234,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             {
                 if (!propio) problemas.Add("el traslado entre establecimientos de la misma empresa requiere un almacén de destino");
                 else if (guia.AlmacenDestinoId == guia.AlmacenOrigenId) problemas.Add("el almacén de destino no puede ser el mismo que el de origen");
+                else if (guia.AlmacenOrigen != null && guia.AlmacenDestino != null
+                    && guia.AlmacenOrigen.CodigoEstablecimientoSunat == guia.AlmacenDestino.CodigoEstablecimientoSunat)
+                    problemas.Add($"origen y destino tienen el mismo código de establecimiento SUNAT ({guia.AlmacenOrigen.CodigoEstablecimientoSunat}): revisa los códigos en Gestionar almacenes");
             }
             else if (!propio)
             {

@@ -44,6 +44,16 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        [HttpPost]
+        public async Task<IActionResult> Crear([FromBody] AlmacenCrearDto dto)
+        {
+            if (!User.HasLbPermiso("ALMACEN_AJUSTAR"))
+                return StatusCode(403, new { message = "No tienes permiso para crear almacenes." });
+            try { return Ok(await _service.Crear(dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         [HttpPut("{id:int}")]
         public async Task<IActionResult> Actualizar(int id, [FromBody] AlmacenActualizarDto dto)
         {
