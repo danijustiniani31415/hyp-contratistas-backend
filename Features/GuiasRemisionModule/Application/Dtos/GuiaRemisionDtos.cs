@@ -2,7 +2,10 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
 {
     public class GuiaRemisionItemCreateDto
     {
-        public long ProductoId { get; set; }
+        /// <summary>Null = línea libre (sin inventario): requiere Descripcion y no mueve stock.</summary>
+        public long? ProductoId { get; set; }
+        public string? Descripcion { get; set; }
+        public bool EsBienTercero { get; set; }
         public string Talla { get; set; } = "";
         public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }
@@ -41,6 +44,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string? VehiculoPlaca { get; set; }
         public string? ConductorNombres { get; set; }
         public string? ConductorLicencia { get; set; }
+        public string? ConductorDni { get; set; }
 
         public string? Observacion { get; set; }
         public string? ReferenciaTipo { get; set; }
@@ -52,8 +56,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
     public class GuiaRemisionItemDetailDto
     {
         public long Id { get; set; }
+        public long? ProductoId { get; set; }
+        /// <summary>Nombre del producto, o la descripción si es una línea libre.</summary>
         public string ProductoNombre { get; set; } = null!;
         public string? ProductoCodigo { get; set; }
+        public bool EsLineaLibre { get; set; }
+        public bool EsBienTercero { get; set; }
         public string Talla { get; set; } = "";
         public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }
@@ -90,6 +98,15 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string? VehiculoPlaca { get; set; }
         public string? ConductorNombres { get; set; }
         public string? ConductorLicencia { get; set; }
+        public string? ConductorDni { get; set; }
+
+        // Datos para la representación impresa (PDF con QR) de la guía.
+        public string EmisorRuc { get; set; } = null!;
+        public string EmisorRazonSocial { get; set; } = null!;
+        public string? AlmacenOrigenDireccion { get; set; }
+        public string? AlmacenOrigenUbigeo { get; set; }
+        public string? AlmacenDestinoDireccion { get; set; }
+        public string? AlmacenDestinoUbigeo { get; set; }
 
         public string? Observacion { get; set; }
         public string? ReferenciaTipo { get; set; }

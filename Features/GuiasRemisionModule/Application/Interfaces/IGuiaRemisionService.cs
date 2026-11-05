@@ -32,5 +32,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces
         /// de origen y borra la guía con sus ítems. Una guía ya transmitida no se puede eliminar.
         /// </summary>
         Task Eliminar(long id, long eliminadoPorId, LbScopeProyectos scope);
+
+        /// <summary>Anula una guía ACEPTADA: revierte stock/pedido y queda ANULADA (la baja ante SUNAT se hace en SOL).</summary>
+        Task Anular(long id, long anuladaPorId, LbScopeProyectos scope);
     }
 }

@@ -34,6 +34,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
         public string? VehiculoPlaca { get; set; }
         public string? ConductorNombres { get; set; }
         public string? ConductorLicencia { get; set; }
+        /// <summary>DNI del conductor: SUNAT lo exige como documento de identidad (la licencia va aparte).</summary>
+        public string? ConductorDni { get; set; }
 
         public string? Observacion { get; set; }
         public string? ReferenciaTipo { get; set; }
@@ -41,6 +43,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
 
         public long CreadoPorUsuarioSistemaId { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
+
+        /// <summary>true cuando ya se movió el stock y se avanzó el pedido (recién al ser ACEPTADA por SUNAT).</summary>
+        public bool DespachoAplicado { get; set; }
 
         public string? XmlNombreArchivo { get; set; }
         public string? XmlHashFirma { get; set; }

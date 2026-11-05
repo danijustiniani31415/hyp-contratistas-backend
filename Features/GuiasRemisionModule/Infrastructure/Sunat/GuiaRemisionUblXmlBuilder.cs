@@ -140,11 +140,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             }
             else if (guia.ModalidadTraslado == "02" && guia.ConductorNombres != null)
             {
-                var partes = guia.ConductorNombres.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-                var nombre = partes.Length > 0 ? partes[0] : guia.ConductorNombres;
-                var apellido = partes.Length > 1 ? partes[1] : nombre;
+                // El nombre se guarda como "Apellidos Nombres" (ej. FLORES VILCA MELVIN NEBER): los dos
+                // primeros términos son apellidos y el resto nombres; con menos de 3 términos, 1 apellido.
+                var partes = guia.ConductorNombres.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var nApellidos = partes.Length >= 3 ? 2 : 1;
+                var apellido = string.Join(' ', partes.Take(nApellidos));
+                var nombre = partes.Length > nApellidos ? string.Join(' ', partes.Skip(nApellidos)) : apellido;
                 stage.Add(new XElement(Cac + "DriverPerson",
-                    new XElement(Cbc + "ID", new XAttribute("schemeID", "1"), guia.ConductorLicencia),
+                    new XElement(Cbc + "ID", new XAttribute("schemeID", "1"), guia.ConductorDni),
                     new XElement(Cbc + "FirstName", nombre),
                     new XElement(Cbc + "FamilyName", apellido),
                     new XElement(Cbc + "JobTitle", "Principal"),
@@ -154,14 +157,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             shipment.Add(stage);
 
             // Motivo 04 (traslado entre establecimientos de la misma empresa): SUNAT pide el código
-            // del establecimiento anexo; "0000" es el domicilio fiscal/principal.
+            // del establecimiento anexo de cada punto ("0000" = domicilio fiscal); sale de cada almacén.
             var esMismaEmpresa = guia.MotivoTraslado == "04";
-            XElement? CodigoEstablecimiento() => esMismaEmpresa
+            XElement? CodigoEstablecimiento(string? codigo) => esMismaEmpresa
                 ? new XElement(Cbc + "AddressTypeCode",
                     new XAttribute("listID", _settings.Ruc),
                     new XAttribute("listAgencyName", "PE:SUNAT"),
                     new XAttribute("listName", "Establecimientos anexos"),
-                    "0000")
+                    string.IsNullOrWhiteSpace(codigo) ? "0000" : codigo)
                 : null;
             XElement UbigeoId(string v) => new(Cbc + "ID",
                 new XAttribute("schemeAgencyName", "PE:INEI"),
@@ -170,12 +173,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             shipment.Add(new XElement(Cac + "Delivery",
                 new XElement(Cac + "DeliveryAddress",
                     ubigeoDestino != null ? UbigeoId(ubigeoDestino) : null,
-                    CodigoEstablecimiento(),
+                    CodigoEstablecimiento(guia.AlmacenDestino?.CodigoEstablecimientoSunat),
                     direccionDestino != null ? new XElement(Cac + "AddressLine", new XElement(Cbc + "Line", direccionDestino)) : null),
                 new XElement(Cac + "Despatch",
                     new XElement(Cac + "DespatchAddress",
                         guia.AlmacenOrigen!.Ubigeo != null ? UbigeoId(guia.AlmacenOrigen.Ubigeo) : null,
-                        CodigoEstablecimiento(),
+                        CodigoEstablecimiento(guia.AlmacenOrigen.CodigoEstablecimientoSunat),
                         guia.AlmacenOrigen.Direccion != null ? new XElement(Cac + "AddressLine", new XElement(Cbc + "Line", guia.AlmacenOrigen.Direccion)) : null))));
 
             if (guia.ModalidadTraslado == "02" && guia.VehiculoPlaca != null)
@@ -187,6 +190,16 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             return shipment;
         }
 
+        /// <summary>Descripción detallada del bien: nombre + talla/color cuando aplican (como en la guía impresa de SUNAT).</summary>
+        private static string DescripcionBien(GuiaRemisionItem item)
+        {
+            var partes = new List<string> { item.Producto?.Nombre ?? item.Descripcion ?? "" };
+            if (!string.IsNullOrWhiteSpace(item.Talla) && item.Talla != "—") partes.Add($"TALLA {item.Talla}");
+            if (!string.IsNullOrWhiteSpace(item.Color) && item.Color != "—") partes.Add($"COLOR {item.Color}");
+            if (item.EsBienTercero) partes.Add("BIEN DE TERCERO");
+            return string.Join(" - ", partes.Where(p => p.Length > 0));
+        }
+
         private XElement BuildDespatchLine(GuiaRemisionItem item, int lineId)
         {
             return new XElement(Cac + "DespatchLine",
@@ -196,7 +209,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
                     item.Cantidad.ToString(CultureInfo.InvariantCulture)),
                 new XElement(Cac + "OrderLineReference", new XElement(Cbc + "LineID", lineId)),
                 new XElement(Cac + "Item",
-                    new XElement(Cbc + "Description", item.Producto?.Nombre),
+                    new XElement(Cbc + "Description", DescripcionBien(item)),
                     item.Producto?.Codigo != null
                         ? new XElement(Cac + "SellersItemIdentification", new XElement(Cbc + "ID", item.Producto.Codigo))
                         : null));

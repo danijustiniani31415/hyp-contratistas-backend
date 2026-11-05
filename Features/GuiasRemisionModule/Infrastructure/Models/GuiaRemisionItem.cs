@@ -10,7 +10,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
     {
         public long Id { get; set; }
         public long GuiaRemisionId { get; set; }
-        public long ProductoId { get; set; }
+        /// <summary>Null = línea libre (sin inventario): solo describe el bien en la guía, no toca el kardex.</summary>
+        public long? ProductoId { get; set; }
+        /// <summary>Descripción de la línea libre (ej. "ROPA DE TRABAJO LAVADA - 12 piezas").</summary>
+        public string? Descripcion { get; set; }
+        /// <summary>Bien que no es de la empresa (ej. de un trabajador): se rotula como tal en la guía.</summary>
+        public bool EsBienTercero { get; set; }
         public string Talla { get; set; } = "";
         public string Color { get; set; } = "";
         public decimal Cantidad { get; set; }

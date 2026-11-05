@@ -52,6 +52,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     throw new AbrilException("Transporte privado requiere la placa del vehículo.", 400);
                 if (string.IsNullOrWhiteSpace(dto.ConductorNombres) || string.IsNullOrWhiteSpace(dto.ConductorLicencia))
                     throw new AbrilException("Transporte privado requiere nombres y licencia del conductor — SUNAT lo exige para que la guía sea válida.", 400);
+                if (string.IsNullOrWhiteSpace(dto.ConductorDni) || !System.Text.RegularExpressions.Regex.IsMatch(dto.ConductorDni.Trim(), @"^\d{8}$"))
+                    throw new AbrilException("Transporte privado requiere el DNI del conductor (8 dígitos).", 400);
             }
 
             using var ctx = _factory.CreateDbContext();
@@ -83,6 +85,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 VehiculoPlaca = dto.VehiculoPlaca,
                 ConductorNombres = dto.ConductorNombres,
                 ConductorLicencia = dto.ConductorLicencia,
+                ConductorDni = dto.ConductorDni?.Trim(),
                 Observacion = dto.Observacion,
                 ReferenciaTipo = dto.ReferenciaTipo,
                 ReferenciaId = dto.ReferenciaId,
@@ -94,19 +97,73 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
 
             foreach (var item in dto.Items)
             {
-                if (!await ctx.Producto.AnyAsync(p => p.Id == item.ProductoId))
-                    throw new AbrilException($"Producto {item.ProductoId} no encontrado.", 404);
+                if (item.ProductoId.HasValue)
+                {
+                    if (!await ctx.Producto.AnyAsync(p => p.Id == item.ProductoId.Value))
+                        throw new AbrilException($"Producto {item.ProductoId} no encontrado.", 404);
+                }
+                else if (string.IsNullOrWhiteSpace(item.Descripcion))
+                {
+                    throw new AbrilException("Una línea sin producto del catálogo requiere una descripción del bien.", 400);
+                }
 
                 ctx.GuiaRemisionItem.Add(new GuiaRemisionItem
                 {
                     GuiaRemisionId = guia.Id,
                     ProductoId = item.ProductoId,
-                    Talla = item.Talla,
-                    Color = item.Color,
+                    Descripcion = item.ProductoId.HasValue ? null : item.Descripcion!.Trim(),
+                    EsBienTercero = item.EsBienTercero,
+                    Talla = item.ProductoId.HasValue ? item.Talla : "",
+                    Color = item.ProductoId.HasValue ? item.Color : "",
                     Cantidad = item.Cantidad,
                     UnidadMedida = item.UnidadMedida,
-                    PedidoItemId = item.PedidoItemId,
+                    PedidoItemId = item.ProductoId.HasValue ? item.PedidoItemId : null,
                 });
+            }
+            await ctx.SaveChangesAsync();
+
+            // Un borrador no mueve stock ni avanza pedidos: eso ocurre recién cuando SUNAT acepta la
+            // guía (ver AplicarDespacho). Así crear/eliminar borradores no ensucia el kardex.
+            return await BuildDetail(ctx, guia.Id);
+        }
+
+        /// <summary>
+        /// Despacho físico: salida del almacén de origen, ingreso al de destino (si es traslado propio)
+        /// y avance de lo despachado en el pedido. Se ejecuta una sola vez, cuando la guía es ACEPTADA.
+        /// </summary>
+        private async Task AplicarDespacho(AppDbContext ctx, GuiaRemision guia)
+        {
+            if (guia.DespachoAplicado) return;
+
+            // Las líneas libres (sin producto del catálogo) no tienen stock: no mueven el kardex.
+            foreach (var item in guia.Items.Where(i => i.ProductoId.HasValue))
+            {
+                await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
+                {
+                    AlmacenId = guia.AlmacenOrigenId,
+                    ProductoId = item.ProductoId!.Value,
+                    Talla = item.Talla,
+                    Color = item.Color,
+                    TipoMovimiento = "SALIDA",
+                    Cantidad = item.Cantidad,
+                    ReferenciaTipo = "GUIA_REMISION",
+                    ReferenciaId = guia.Id,
+                }, guia.CreadoPorUsuarioSistemaId);
+
+                if (guia.AlmacenDestinoId.HasValue)
+                {
+                    await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
+                    {
+                        AlmacenId = guia.AlmacenDestinoId.Value,
+                        ProductoId = item.ProductoId!.Value,
+                        Talla = item.Talla,
+                        Color = item.Color,
+                        TipoMovimiento = "INGRESO",
+                        Cantidad = item.Cantidad,
+                        ReferenciaTipo = "GUIA_REMISION",
+                        ReferenciaId = guia.Id,
+                    }, guia.CreadoPorUsuarioSistemaId);
+                }
 
                 // Si este ítem despacha un pedido puntual, avanza su trazabilidad — recién con
                 // esto el pedido sabe que ya salió de Lima, antes de que mina confirme.
@@ -116,41 +173,32 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     if (pedidoItem != null) pedidoItem.CantidadDespachada += item.Cantidad;
                 }
             }
+
+            guia.DespachoAplicado = true;
             await ctx.SaveChangesAsync();
+        }
 
-            // El despacho físico ya ocurre acá (todo o nada) — la transmisión a SUNAT (Enviar) es
-            // un paso legal aparte que puede reintentarse sin volver a tocar el stock.
-            foreach (var item in dto.Items)
+        /// <summary>Verifica antes de transmitir que el almacén de origen tiene el stock de toda la guía.</summary>
+        private static async Task ValidarStockOrigen(AppDbContext ctx, GuiaRemision guia)
+        {
+            if (guia.DespachoAplicado) return;
+
+            var requeridos = guia.Items.Where(i => i.ProductoId.HasValue)
+                .GroupBy(i => new { ProductoId = i.ProductoId!.Value, i.Talla, i.Color });
+            foreach (var g in requeridos)
             {
-                await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
+                var necesario = g.Sum(i => i.Cantidad);
+                var disponible = await ctx.Stock.AsNoTracking()
+                    .Where(s => s.AlmacenId == guia.AlmacenOrigenId && s.ProductoId == g.Key.ProductoId && s.Talla == g.Key.Talla && s.Color == g.Key.Color)
+                    .Select(s => s.CantidadActual)
+                    .FirstOrDefaultAsync();
+                if (disponible < necesario)
                 {
-                    AlmacenId = dto.AlmacenOrigenId,
-                    ProductoId = item.ProductoId,
-                    Talla = item.Talla,
-                    Color = item.Color,
-                    TipoMovimiento = "SALIDA",
-                    Cantidad = item.Cantidad,
-                    ReferenciaTipo = "GUIA_REMISION",
-                    ReferenciaId = guia.Id,
-                }, creadoPorId);
-
-                if (dto.AlmacenDestinoId.HasValue)
-                {
-                    await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
-                    {
-                        AlmacenId = dto.AlmacenDestinoId.Value,
-                        ProductoId = item.ProductoId,
-                        Talla = item.Talla,
-                        Color = item.Color,
-                        TipoMovimiento = "INGRESO",
-                        Cantidad = item.Cantidad,
-                        ReferenciaTipo = "GUIA_REMISION",
-                        ReferenciaId = guia.Id,
-                    }, creadoPorId);
+                    var nombre = g.First().Producto?.Nombre ?? $"producto {g.Key.ProductoId}";
+                    throw new AbrilException(
+                        $"Stock insuficiente en el almacén de origen para «{nombre}»: hay {disponible} y la guía lleva {necesario}.", 400);
                 }
             }
-
-            return await BuildDetail(ctx, guia.Id);
         }
 
         public async Task<GuiaRemisionListResponseDto> List(string? search, string? estado, HashSet<int>? proyectosPermitidos, int page, int pageSize)
@@ -229,6 +277,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             if (guia.Estado != "BORRADOR" && guia.Estado != "RECHAZADA")
                 throw new AbrilException($"Esta guía ya fue transmitida (estado {guia.Estado}) — no se puede reenviar.", 400);
 
+            // La guía lleva mercadería: se confirma que hay stock ANTES de gastar un correlativo.
+            await ValidarStockOrigen(ctx, guia);
+
             // Correlativo SUNAT: se toma recién ahora y queda fijo en la guía, de modo que un reintento
             // (error de red, rechazo por formato) reenvía con el MISMO número y no consume otro.
             if (guia.Numero == null)
@@ -274,6 +325,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                         guia.Estado = consulta.Aceptado ? "ACEPTADA" : "RECHAZADA";
                         guia.RespondidoEn = DateTimeOffset.UtcNow;
                         await ctx.SaveChangesAsync();
+                        if (consulta.Aceptado) await AplicarDespacho(ctx, guia);
                         break;
                     }
                 }
@@ -285,7 +337,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
         public async Task<GuiaRemisionDetailDto> ConsultarEstado(long id, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
-            var guia = await ctx.GuiaRemision.Include(g => g.AlmacenOrigen).FirstOrDefaultAsync(g => g.Id == id)
+            var guia = await ctx.GuiaRemision.Include(g => g.AlmacenOrigen).Include(g => g.Items).FirstOrDefaultAsync(g => g.Id == id)
                 ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
 
             if (guia.AlmacenOrigen!.ProyectoId.HasValue && !scope.Permite(guia.AlmacenOrigen.ProyectoId.Value))
@@ -302,6 +354,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 guia.Estado = consulta.Aceptado ? "ACEPTADA" : "RECHAZADA";
                 guia.RespondidoEn = DateTimeOffset.UtcNow;
                 await ctx.SaveChangesAsync();
+                if (consulta.Aceptado) await AplicarDespacho(ctx, guia);
             }
 
             return await BuildDetail(ctx, id);
@@ -326,8 +379,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             if (guia.AlmacenDestino.ProyectoId.HasValue && !scope.Permite(guia.AlmacenDestino.ProyectoId.Value))
                 throw new AbrilException("No tienes permiso para confirmar recepción en el proyecto de destino de esta guía.", 403);
 
-            if (guia.Estado != "ENVIADA" && guia.Estado != "ACEPTADA")
-                throw new AbrilException($"Esta guía todavía no se transmitió a SUNAT (estado {guia.Estado}) — confírmala después de enviarla.", 400);
+            // El destino se acredita recién cuando SUNAT acepta la guía: sin eso no hay stock que ajustar.
+            if (guia.Estado != "ACEPTADA")
+                throw new AbrilException($"Esta guía todavía no fue aceptada por SUNAT (estado {guia.Estado}) — confírmala cuando esté ACEPTADA.", 400);
 
             if (guia.Items.Any(i => i.ConfirmadoEn != null))
                 throw new AbrilException("Esta guía ya tiene una confirmación de recepción registrada.", 400);
@@ -349,14 +403,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 item.ConfirmadoPorUsuarioSistemaId = confirmadoPorId;
 
                 var faltante = item.Cantidad - itemDto.CantidadConfirmada;
-                if (faltante > 0)
+                if (faltante > 0 && item.ProductoId.HasValue)
                 {
                     // Al crear la guía ya se acreditó el destino con Cantidad completa — si llegó
                     // menos, se corrige ese sobre-crédito para que el kardex no quede inflado.
                     await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
                     {
                         AlmacenId = guia.AlmacenDestinoId.Value,
-                        ProductoId = item.ProductoId,
+                        ProductoId = item.ProductoId.Value,
                         Talla = item.Talla,
                         Color = item.Color,
                         TipoMovimiento = "SALIDA",
@@ -397,6 +451,45 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             if (guia.Items.Any(i => i.ConfirmadoEn != null))
                 throw new AbrilException("Esta guía ya tiene una recepción confirmada — no se puede eliminar.", 400);
 
+            await RevertirDespacho(ctx, guia, eliminadoPorId);
+
+            ctx.GuiaRemisionItem.RemoveRange(guia.Items);
+            ctx.GuiaRemision.Remove(guia);
+            await ctx.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Anula una guía ya ACEPTADA por SUNAT: revierte stock y pedido y la deja en ANULADA (no se
+        /// borra: es un documento legal y queda su historial). La baja ante SUNAT se hace aparte en SOL
+        /// (Empresas > Guía de Remisión electrónica > Baja de GRE); acá solo se refleja en el sistema.
+        /// </summary>
+        public async Task Anular(long id, long anuladaPorId, LbScopeProyectos scope)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var guia = await ctx.GuiaRemision
+                .Include(g => g.AlmacenOrigen)
+                .Include(g => g.Items)
+                .FirstOrDefaultAsync(g => g.Id == id)
+                ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
+
+            if (guia.AlmacenOrigen?.ProyectoId is int proyectoId && !scope.Permite(proyectoId))
+                throw new AbrilException("No tienes permiso sobre el proyecto de origen de esta guía.", 403);
+
+            if (guia.Estado != "ACEPTADA")
+                throw new AbrilException($"Solo se puede anular una guía ACEPTADA por SUNAT (esta está {guia.Estado}). Las borradores y rechazadas se eliminan.", 400);
+            if (guia.Items.Any(i => i.ConfirmadoEn != null))
+                throw new AbrilException("Esta guía ya tiene una recepción confirmada — no se puede anular.", 400);
+
+            await RevertirDespacho(ctx, guia, anuladaPorId);
+
+            guia.Estado = "ANULADA";
+            guia.DespachoAplicado = false;
+            await ctx.SaveChangesAsync();
+        }
+
+        /// <summary>Compensa el stock y el pedido que movió la guía (compartido por Eliminar y Anular).</summary>
+        private async Task RevertirDespacho(AppDbContext ctx, GuiaRemision guia, long eliminadoPorId)
+        {
             // El kardex no se borra: lo que movió la guía se compensa con movimientos inversos.
             // Se parte de los movimientos reales y no de los ítems, porque si la creación falló a
             // mitad de camino puede haber guías con ítems pero sin (o con solo parte de) stock movido.
@@ -455,20 +548,17 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 }
             }
 
-            // Al crear la guía se sumó lo despachado al pedido de origen — se resta de vuelta.
-            foreach (var item in guia.Items.Where(i => i.PedidoItemId.HasValue))
+            // Solo si el despacho ya se había aplicado (guías anteriores o aceptadas) se sumó lo
+            // despachado al pedido de origen — en ese caso se resta de vuelta.
+            foreach (var item in guia.Items.Where(i => guia.DespachoAplicado && i.PedidoItemId.HasValue))
             {
                 var pedidoItem = await ctx.PedidoItem.FindAsync(item.PedidoItemId!.Value);
                 if (pedidoItem != null)
                     pedidoItem.CantidadDespachada = Math.Max(0, pedidoItem.CantidadDespachada - item.Cantidad);
             }
-
-            ctx.GuiaRemisionItem.RemoveRange(guia.Items);
-            ctx.GuiaRemision.Remove(guia);
-            await ctx.SaveChangesAsync();
         }
 
-        private static async Task<GuiaRemisionDetailDto> BuildDetail(AppDbContext ctx, long id)
+        private async Task<GuiaRemisionDetailDto> BuildDetail(AppDbContext ctx, long id)
         {
             var guia = await ctx.GuiaRemision
                 .Include(g => g.AlmacenOrigen)
@@ -501,6 +591,13 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 VehiculoPlaca = guia.VehiculoPlaca,
                 ConductorNombres = guia.ConductorNombres,
                 ConductorLicencia = guia.ConductorLicencia,
+                ConductorDni = guia.ConductorDni,
+                EmisorRuc = _settings.Ruc,
+                EmisorRazonSocial = _settings.RazonSocial,
+                AlmacenOrigenDireccion = guia.AlmacenOrigen.Direccion,
+                AlmacenOrigenUbigeo = guia.AlmacenOrigen.Ubigeo,
+                AlmacenDestinoDireccion = guia.AlmacenDestino?.Direccion,
+                AlmacenDestinoUbigeo = guia.AlmacenDestino?.Ubigeo,
                 Observacion = guia.Observacion,
                 ReferenciaTipo = guia.ReferenciaTipo,
                 ReferenciaId = guia.ReferenciaId,
@@ -512,13 +609,16 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 EnviadoEn = guia.EnviadoEn,
                 RespondidoEn = guia.RespondidoEn,
                 ConfirmacionPendiente = guia.AlmacenDestinoId != null
-                    && (guia.Estado == "ENVIADA" || guia.Estado == "ACEPTADA")
+                    && guia.Estado == "ACEPTADA"
                     && guia.Items.All(i => i.ConfirmadoEn == null),
                 Items = guia.Items.Select(i => new GuiaRemisionItemDetailDto
                 {
                     Id = i.Id,
-                    ProductoNombre = i.Producto!.Nombre,
-                    ProductoCodigo = i.Producto.Codigo,
+                    ProductoId = i.ProductoId,
+                    ProductoNombre = i.Producto?.Nombre ?? i.Descripcion ?? "",
+                    ProductoCodigo = i.Producto?.Codigo,
+                    EsLineaLibre = i.ProductoId == null,
+                    EsBienTercero = i.EsBienTercero,
                     Talla = i.Talla,
                     Color = i.Color,
                     Cantidad = i.Cantidad,
