@@ -215,6 +215,10 @@ namespace Abril_Backend.Features.PersonasModule.Application.Dtos
     public class AlmacenCatalogoItemDto : CatalogoItemDto
     {
         public int? ProyectoId { get; set; }
+        /// <summary>Datos que SUNAT ve de este almacén en la guía de remisión (para mostrarlos al elegirlo).</summary>
+        public string? Direccion { get; set; }
+        public string? Ubigeo { get; set; }
+        public string CodigoEstablecimientoSunat { get; set; } = "0000";
     }
 
     public class CatalogosPersonasDto

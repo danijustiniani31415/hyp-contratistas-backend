@@ -10,6 +10,7 @@ namespace Abril_Backend.Features.AlmacenModule
         {
             services.AddScoped<IAlmacenKardexService, AlmacenKardexService>();
             services.AddScoped<IAlmacenGestionService, AlmacenGestionService>();
+            services.AddScoped<IAlmacenCargaMasivaService, AlmacenCargaMasivaService>();
             return services;
         }
     }

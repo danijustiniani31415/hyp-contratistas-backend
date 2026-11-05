@@ -776,7 +776,11 @@ namespace Abril_Backend.Features.PersonasModule.Application.Services
                 Proyectos = await ctx.Proyecto
                     .Select(p => new CatalogoItemDto { Id = p.Id, Nombre = p.Nombre }).ToListAsync(),
                 Almacenes = await ctx.Almacen.Where(a => a.Activo)
-                    .Select(a => new AlmacenCatalogoItemDto { Id = a.Id, Nombre = a.Nombre, ProyectoId = a.ProyectoId }).ToListAsync(),
+                    .Select(a => new AlmacenCatalogoItemDto
+                    {
+                        Id = a.Id, Nombre = a.Nombre, ProyectoId = a.ProyectoId,
+                        Direccion = a.Direccion, Ubigeo = a.Ubigeo, CodigoEstablecimientoSunat = a.CodigoEstablecimientoSunat,
+                    }).ToListAsync(),
             };
         }
 
