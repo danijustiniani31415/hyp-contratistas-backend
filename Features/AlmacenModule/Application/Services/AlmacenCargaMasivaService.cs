@@ -92,6 +92,8 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                                     RequiereTalla = nuevo.RequiereTalla,
                                     TipoTalla = nuevo.RequiereTalla ? nuevo.TipoTalla : null,
                                     RequiereColor = nuevo.RequiereColor,
+                                    Presentacion = nuevo.Presentacion,
+                                    UnidadesPorPresentacion = nuevo.UnidadesPorPresentacion,
                                 });
                                 productoId = creado.Id;
                                 r.ProductoCreado = true;

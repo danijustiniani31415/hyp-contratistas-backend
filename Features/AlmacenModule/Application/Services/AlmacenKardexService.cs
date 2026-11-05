@@ -28,7 +28,15 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var s = search.Trim().ToLower();
-                query = query.Where(x => x.Producto!.Nombre.ToLower().Contains(s));
+                // Cada palabra puede estar en el nombre, código, color o talla: «plumon azul» o «bota 43».
+                foreach (var palabra in s.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var w = palabra;
+                    query = query.Where(x => x.Producto!.Nombre.ToLower().Contains(w)
+                        || (x.Producto.Codigo != null && x.Producto.Codigo.ToLower().Contains(w))
+                        || x.Color.ToLower().Contains(w)
+                        || x.Talla.ToLower().Contains(w));
+                }
             }
 
             var total = await query.CountAsync();

@@ -13,6 +13,9 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public bool RequiereColor { get; set; }
         /// <summary>ROPA, CALZADO o GUANTES — obligatorio si RequiereTalla.</summary>
         public string? TipoTalla { get; set; }
+        /// <summary>Cómo viene en la factura (PAQUETE…) y cuántas unidades trae: se guarda para próximas cargas.</summary>
+        public string? Presentacion { get; set; }
+        public decimal? UnidadesPorPresentacion { get; set; }
     }
 
     public class CargaMasivaFilaDto

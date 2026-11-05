@@ -69,8 +69,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
 
             var digestValue = ((XmlElement)signatureXml).GetElementsByTagName("DigestValue")[0]?.InnerText ?? "";
 
-            using var writer = new StringWriter(new StringBuilder());
-            using (var xmlWriter = XmlWriter.Create(writer, new XmlWriterSettings { Encoding = Encoding.UTF8, OmitXmlDeclaration = false }))
+            using var writer = new Utf8StringWriter();
+            using (var xmlWriter = XmlWriter.Create(writer, new XmlWriterSettings { OmitXmlDeclaration = false }))
             {
                 doc.Save(xmlWriter);
             }

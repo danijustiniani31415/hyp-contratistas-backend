@@ -77,6 +77,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
                     TipoTalla = p.TipoTalla,
                     RequiereColor = p.RequiereColor,
                     EsRetornable = p.EsRetornable,
+                    Presentacion = p.Presentacion,
+                    UnidadesPorPresentacion = p.UnidadesPorPresentacion,
                     Activo = p.Activo,
                 })
                 .ToListAsync();
@@ -199,6 +201,15 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
         /// se agrega al final («Flexómetro 5m» + «Truper» → «Flexómetro 5m Truper»). Así todos los selectores del
         /// sistema distinguen una marca de otra sin tocar cada pantalla.
         /// </summary>
+        /// <summary>Presentación y factor van juntos: sin factor mayor que 1 no hay conversión que guardar.</summary>
+        private static string? LimpiarPresentacion(string? presentacion, decimal? factor, out decimal? factorLimpio)
+        {
+            var p = presentacion?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(p) || factor is null || factor <= 1) { factorLimpio = null; return null; }
+            factorLimpio = factor;
+            return p;
+        }
+
         public static string ComponerNombre(string nombre, string? marca)
         {
             nombre = (nombre ?? "").Trim();
@@ -244,6 +255,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
                 TipoTalla = ValidarTipoTalla(dto.RequiereTalla, dto.TipoTalla),
                 RequiereColor = dto.RequiereColor,
                 EsRetornable = dto.EsRetornable,
+                Presentacion = LimpiarPresentacion(dto.Presentacion, dto.UnidadesPorPresentacion, out var factor),
+                UnidadesPorPresentacion = factor,
                 Activo = true,
                 CreadoEn = DateTimeOffset.UtcNow,
             };
@@ -280,6 +293,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             producto.TipoTalla = ValidarTipoTalla(dto.RequiereTalla, dto.TipoTalla);
             producto.RequiereColor = dto.RequiereColor;
             producto.EsRetornable = dto.EsRetornable;
+            producto.Presentacion = LimpiarPresentacion(dto.Presentacion, dto.UnidadesPorPresentacion, out var factorPres);
+            producto.UnidadesPorPresentacion = factorPres;
             producto.Activo = dto.Activo;
 
             if (dto.Alias != null)
@@ -341,6 +356,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Services
             TipoTalla = p.TipoTalla,
             RequiereColor = p.RequiereColor,
             EsRetornable = p.EsRetornable,
+            Presentacion = p.Presentacion,
+            UnidadesPorPresentacion = p.UnidadesPorPresentacion,
             Activo = p.Activo,
         };
     }

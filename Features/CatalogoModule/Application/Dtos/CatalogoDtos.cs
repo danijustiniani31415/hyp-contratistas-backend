@@ -26,6 +26,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string? TipoTalla { get; set; }
         public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
+        public string? Presentacion { get; set; }
+        public decimal? UnidadesPorPresentacion { get; set; }
         public bool Activo { get; set; }
     }
 
@@ -57,6 +59,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string? TipoTalla { get; set; }
         public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
+        public string? Presentacion { get; set; }
+        public decimal? UnidadesPorPresentacion { get; set; }
         public bool Activo { get; set; }
         /// <summary>Otras formas de escribir el nombre (el sistema las aprende; también se pueden editar).</summary>
         public List<string> Alias { get; set; } = new();
@@ -75,6 +79,8 @@ namespace Abril_Backend.Features.CatalogoModule.Application.Dtos
         public string? TipoTalla { get; set; }
         public bool RequiereColor { get; set; }
         public bool EsRetornable { get; set; }
+        public string? Presentacion { get; set; }
+        public decimal? UnidadesPorPresentacion { get; set; }
         /// <summary>En una edición reemplaza la lista de alias; null = dejarla como está.</summary>
         public List<string>? Alias { get; set; }
     }

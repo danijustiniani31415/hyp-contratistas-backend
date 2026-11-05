@@ -31,6 +31,11 @@ namespace Abril_Backend.Features.CatalogoModule.Infrastructure.Models
         public bool RequiereColor { get; set; }
         /// <summary>true para herramientas/equipos en préstamo (no se consumen, vuelven).</summary>
         public bool EsRetornable { get; set; }
+        /// <summary>Cómo suele venir en la factura (PAQUETE, CAJA, DOCENA…). El stock siempre se lleva en
+        /// UnidadMedida, que es lo que entrega el almacenero. Null = viene en la misma unidad.</summary>
+        public string? Presentacion { get; set; }
+        /// <summary>Cuántas unidades de UnidadMedida trae una Presentacion (ej. 100 hojas por paquete).</summary>
+        public decimal? UnidadesPorPresentacion { get; set; }
         public bool Activo { get; set; } = true;
         public DateTimeOffset CreadoEn { get; set; }
 

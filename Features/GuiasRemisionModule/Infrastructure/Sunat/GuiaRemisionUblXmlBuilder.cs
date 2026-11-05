@@ -102,8 +102,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             // XDocument.ToString() nunca emite la declaración <?xml ...?> (limitación conocida de
             // LINQ-to-XML) — SUNAT sí la exige, así que se serializa con XmlWriter en su lugar.
             var xDoc = new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), doc);
-            using var writer = new StringWriter(new StringBuilder());
-            using (var xmlWriter = XmlWriter.Create(writer, new XmlWriterSettings { Encoding = Encoding.UTF8, OmitXmlDeclaration = false }))
+            using var writer = new Utf8StringWriter();
+            using (var xmlWriter = XmlWriter.Create(writer, new XmlWriterSettings { OmitXmlDeclaration = false }))
             {
                 xDoc.Save(xmlWriter);
             }
