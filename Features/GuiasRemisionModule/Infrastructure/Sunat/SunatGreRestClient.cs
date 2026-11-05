@@ -122,6 +122,24 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
                 JsonValueKind.Number => ind.GetInt32() == 1,
                 _ => false,
             };
+            // codRespuesta 99 + error = SUNAT rechazó el envío (p. ej. el XML no pasó el esquema) y no
+            // genera CDR: sin esto la guía quedaría en "SUNAT todavía no genera el CDR" para siempre.
+            if (!cdrGenerado
+                && root.TryGetProperty("codRespuesta", out var codResp) && codResp.ValueKind == JsonValueKind.String
+                && codResp.GetString() == "99"
+                && root.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.Object)
+            {
+                var numError = err.TryGetProperty("numError", out var ne) ? ne.GetString() : null;
+                var desError = err.TryGetProperty("desError", out var de) ? de.GetString() : null;
+                return new SunatGreConsultaResultado
+                {
+                    CdrGenerado = true,
+                    Aceptado = false,
+                    CodigoRespuesta = numError ?? "99",
+                    Descripcion = desError,
+                };
+            }
+
             if (!cdrGenerado)
                 return new SunatGreConsultaResultado { CdrGenerado = false };
 

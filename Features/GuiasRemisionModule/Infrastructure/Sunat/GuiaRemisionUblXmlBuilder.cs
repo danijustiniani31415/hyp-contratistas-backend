@@ -37,7 +37,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             if (guia.AlmacenOrigen == null)
                 throw new InvalidOperationException("GuiaRemision.AlmacenOrigen debe estar cargado antes de construir el XML.");
 
-            var fecha = guia.FechaTraslado.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            // Hora de Perú (UTC-5): SUNAT rechaza fechas de emisión futuras y exige que el inicio
+            // del traslado no sea anterior a la fecha de emisión.
+            var emision = DateTime.UtcNow.AddHours(-5);
+            var hoy = DateOnly.FromDateTime(emision);
+            var inicioTraslado = (guia.FechaTraslado < hoy ? hoy : guia.FechaTraslado)
+                .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             var esTrasladoPropio = guia.AlmacenDestinoId.HasValue;
 
             var destinatarioRuc = esTrasladoPropio ? _settings.Ruc : guia.DestinatarioRuc ?? _settings.Ruc;
@@ -62,22 +67,34 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
                 new XElement(Cbc + "UBLVersionID", "2.1"),
                 new XElement(Cbc + "CustomizationID", "2.0"),
                 new XElement(Cbc + "ID", $"{guia.Serie}-{guia.Numero}"),
-                new XElement(Cbc + "IssueDate", fecha),
+                new XElement(Cbc + "IssueDate", emision.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                new XElement(Cbc + "IssueTime", emision.ToString("HH:mm:ss", CultureInfo.InvariantCulture)),
                 new XElement(Cbc + "DespatchAdviceTypeCode", "09"),
+                string.IsNullOrWhiteSpace(guia.Observacion) ? null : new XElement(Cbc + "Note", guia.Observacion),
+
+                new XElement(Cac + "Signature",
+                    new XElement(Cbc + "ID", _settings.Ruc),
+                    new XElement(Cac + "SignatoryParty",
+                        new XElement(Cac + "PartyIdentification", new XElement(Cbc + "ID", _settings.Ruc)),
+                        new XElement(Cac + "PartyName", new XElement(Cbc + "Name", _settings.RazonSocial))),
+                    new XElement(Cac + "DigitalSignatureAttachment",
+                        new XElement(Cac + "ExternalReference", new XElement(Cbc + "URI", "#SignatureSP")))),
 
                 new XElement(Cac + "DespatchSupplierParty",
-                    new XElement(Cbc + "CustomerAssignedAccountID", _settings.Ruc),
                     new XElement(Cac + "Party",
+                        new XElement(Cac + "PartyIdentification",
+                            new XElement(Cbc + "ID", new XAttribute("schemeID", "6"), _settings.Ruc)),
                         new XElement(Cac + "PartyLegalEntity",
                             new XElement(Cbc + "RegistrationName", _settings.RazonSocial)))),
 
                 new XElement(Cac + "DeliveryCustomerParty",
-                    new XElement(Cbc + "CustomerAssignedAccountID", destinatarioRuc),
                     new XElement(Cac + "Party",
+                        new XElement(Cac + "PartyIdentification",
+                            new XElement(Cbc + "ID", new XAttribute("schemeID", "6"), destinatarioRuc)),
                         new XElement(Cac + "PartyLegalEntity",
                             new XElement(Cbc + "RegistrationName", destinatarioNombre)))),
 
-                BuildShipment(guia, direccionDestino, ubigeoDestino, fecha),
+                BuildShipment(guia, direccionDestino, ubigeoDestino, inicioTraslado),
 
                 guia.Items.Select((item, i) => BuildDespatchLine(item, i + 1))
             );
@@ -93,50 +110,78 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             return writer.ToString();
         }
 
-        private XElement BuildShipment(GuiaRemision guia, string? direccionDestino, string? ubigeoDestino, string fecha)
+        private XElement BuildShipment(GuiaRemision guia, string? direccionDestino, string? ubigeoDestino, string inicioTraslado)
         {
+            // Orden exigido por el XSD UBL: ID, HandlingCode (motivo), peso, bultos, ShipmentStage,
+            // Delivery, TransportHandlingUnit (vehículo). Un elemento fuera de lugar rechaza todo el XML.
             var shipment = new XElement(Cac + "Shipment",
-                new XElement(Cbc + "ID", "1"),
-                new XElement(Cbc + "HandlingCode", guia.ModalidadTraslado),
+                new XElement(Cbc + "ID", "SUNAT_Envio"),
+                new XElement(Cbc + "HandlingCode", guia.MotivoTraslado),
                 new XElement(Cbc + "GrossWeightMeasure",
                     new XAttribute("unitCode", guia.PesoBrutoUnidad),
-                    guia.PesoBrutoTotal.ToString(CultureInfo.InvariantCulture)));
+                    guia.PesoBrutoTotal.ToString(CultureInfo.InvariantCulture)),
+                guia.NumBultos.HasValue
+                    ? new XElement(Cbc + "TotalTransportHandlingUnitQuantity", guia.NumBultos.Value)
+                    : null);
 
-            if (guia.NumBultos.HasValue)
+            // Modalidad '01' = transporte público -> transportista (empresa de transporte).
+            // Modalidad '02' = transporte privado -> vehículo propio + conductor.
+            var stage = new XElement(Cac + "ShipmentStage",
+                new XElement(Cbc + "TransportModeCode", guia.ModalidadTraslado),
+                new XElement(Cac + "TransitPeriod", new XElement(Cbc + "StartDate", inicioTraslado)));
+
+            if (guia.ModalidadTraslado == "01" && guia.TransportistaRuc != null)
             {
-                shipment.Add(new XElement(Cac + "TransportHandlingUnit",
-                    new XElement(Cbc + "PackageQuantity", guia.NumBultos.Value)));
+                stage.Add(new XElement(Cac + "CarrierParty",
+                    new XElement(Cac + "PartyIdentification",
+                        new XElement(Cbc + "ID", new XAttribute("schemeID", "6"), guia.TransportistaRuc)),
+                    new XElement(Cac + "PartyLegalEntity",
+                        new XElement(Cbc + "RegistrationName", guia.TransportistaRazonSocial))));
             }
+            else if (guia.ModalidadTraslado == "02" && guia.ConductorNombres != null)
+            {
+                var partes = guia.ConductorNombres.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                var nombre = partes.Length > 0 ? partes[0] : guia.ConductorNombres;
+                var apellido = partes.Length > 1 ? partes[1] : nombre;
+                stage.Add(new XElement(Cac + "DriverPerson",
+                    new XElement(Cbc + "ID", new XAttribute("schemeID", "1"), guia.ConductorLicencia),
+                    new XElement(Cbc + "FirstName", nombre),
+                    new XElement(Cbc + "FamilyName", apellido),
+                    new XElement(Cbc + "JobTitle", "Principal"),
+                    new XElement(Cac + "IdentityDocumentReference",
+                        new XElement(Cbc + "ID", guia.ConductorLicencia))));
+            }
+            shipment.Add(stage);
+
+            // Motivo 04 (traslado entre establecimientos de la misma empresa): SUNAT pide el código
+            // del establecimiento anexo; "0000" es el domicilio fiscal/principal.
+            var esMismaEmpresa = guia.MotivoTraslado == "04";
+            XElement? CodigoEstablecimiento() => esMismaEmpresa
+                ? new XElement(Cbc + "AddressTypeCode",
+                    new XAttribute("listID", _settings.Ruc),
+                    new XAttribute("listAgencyName", "PE:SUNAT"),
+                    new XAttribute("listName", "Establecimientos anexos"),
+                    "0000")
+                : null;
+            XElement UbigeoId(string v) => new(Cbc + "ID",
+                new XAttribute("schemeAgencyName", "PE:INEI"),
+                new XAttribute("schemeName", "Ubigeos"), v);
 
             shipment.Add(new XElement(Cac + "Delivery",
                 new XElement(Cac + "DeliveryAddress",
-                    ubigeoDestino != null ? new XElement(Cbc + "ID", ubigeoDestino) : null,
+                    ubigeoDestino != null ? UbigeoId(ubigeoDestino) : null,
+                    CodigoEstablecimiento(),
                     direccionDestino != null ? new XElement(Cac + "AddressLine", new XElement(Cbc + "Line", direccionDestino)) : null),
                 new XElement(Cac + "Despatch",
-                    new XElement(Cbc + "ActualDespatchDate", fecha),
                     new XElement(Cac + "DespatchAddress",
-                        guia.AlmacenOrigen!.Ubigeo != null ? new XElement(Cbc + "ID", guia.AlmacenOrigen.Ubigeo) : null,
+                        guia.AlmacenOrigen!.Ubigeo != null ? UbigeoId(guia.AlmacenOrigen.Ubigeo) : null,
+                        CodigoEstablecimiento(),
                         guia.AlmacenOrigen.Direccion != null ? new XElement(Cac + "AddressLine", new XElement(Cbc + "Line", guia.AlmacenOrigen.Direccion)) : null))));
 
-            // Modalidad '01' = transporte público -> va el transportista (empresa de transporte).
-            // Modalidad '02' = transporte privado -> va vehículo propio + conductor.
-            if (guia.ModalidadTraslado == "01" && guia.TransportistaRuc != null)
-            {
-                shipment.Add(new XElement(Cac + "CarrierParty",
-                    new XElement(Cac + "PartyIdentification", new XElement(Cbc + "ID", guia.TransportistaRuc)),
-                    new XElement(Cac + "PartyLegalEntity", new XElement(Cbc + "RegistrationName", guia.TransportistaRazonSocial))));
-            }
-            else if (guia.ModalidadTraslado == "02" && guia.VehiculoPlaca != null)
+            if (guia.ModalidadTraslado == "02" && guia.VehiculoPlaca != null)
             {
                 shipment.Add(new XElement(Cac + "TransportHandlingUnit",
                     new XElement(Cac + "TransportEquipment", new XElement(Cbc + "ID", guia.VehiculoPlaca))));
-
-                if (guia.ConductorNombres != null)
-                {
-                    shipment.Add(new XElement(Cac + "DriverPerson",
-                        new XElement(Cbc + "ID", guia.ConductorLicencia),
-                        new XElement(Cbc + "FirstName", guia.ConductorNombres)));
-                }
             }
 
             return shipment;

@@ -226,7 +226,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             if (guia.AlmacenOrigen!.ProyectoId.HasValue && !scope.Permite(guia.AlmacenOrigen.ProyectoId.Value))
                 throw new AbrilException("No tienes permiso para transmitir guías de remisión de este proyecto.", 403);
 
-            if (guia.Estado != "BORRADOR")
+            // RECHAZADA se puede reenviar: SUNAT rechaza por validación del XML sin registrar el
+            // comprobante, así que se reintenta con el mismo número una vez corregido el dato.
+            if (guia.Estado != "BORRADOR" && guia.Estado != "RECHAZADA")
                 throw new AbrilException($"Esta guía ya fue transmitida (estado {guia.Estado}) — no se puede reenviar.", 400);
 
             var xmlSinFirmar = _xmlBuilder.Build(guia);
@@ -242,6 +244,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             guia.EnviadoEn = DateTimeOffset.UtcNow;
             guia.Ticket = envio.NumTicket;
             guia.Estado = "ENVIADA";
+            guia.CdrCodigoRespuesta = null;
+            guia.CdrDescripcion = null;
+            guia.RespondidoEn = null;
             await ctx.SaveChangesAsync();
 
             // SUNAT resuelve el ticket de forma asíncrona — normalmente en segundos. Se intenta

@@ -58,6 +58,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             keyInfo.AddClause(new KeyInfoX509Data(cert));
             signedXml.KeyInfo = keyInfo;
 
+            // Debe coincidir con cac:Signature/ExternalReference/URI (#SignatureSP) del XML.
+            signedXml.Signature.Id = "SignatureSP";
             signedXml.ComputeSignature();
             var signatureXml = signedXml.GetXml();
 
