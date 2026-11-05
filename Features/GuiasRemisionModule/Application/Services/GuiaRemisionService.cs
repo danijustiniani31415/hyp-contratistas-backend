@@ -52,8 +52,10 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     throw new AbrilException("Transporte privado requiere la placa del vehículo.", 400);
                 if (string.IsNullOrWhiteSpace(dto.ConductorNombres) || string.IsNullOrWhiteSpace(dto.ConductorLicencia))
                     throw new AbrilException("Transporte privado requiere nombres y licencia del conductor — SUNAT lo exige para que la guía sea válida.", 400);
-                if (string.IsNullOrWhiteSpace(dto.ConductorDni) || !System.Text.RegularExpressions.Regex.IsMatch(dto.ConductorDni.Trim(), @"^\d{8}$"))
-                    throw new AbrilException("Transporte privado requiere el DNI del conductor (8 dígitos).", 400);
+                // El DNI es opcional al crear (el borrador puede estar incompleto, y Compras crea guías sin él);
+                // se exige completo recién al transmitir (ValidarParaTransmitir).
+                if (!string.IsNullOrWhiteSpace(dto.ConductorDni) && !GuiaValidaciones.DniValido(dto.ConductorDni.Trim()))
+                    throw new AbrilException("El DNI del conductor debe tener 8 dígitos.", 400);
             }
 
             using var ctx = _factory.CreateDbContext();
@@ -82,10 +84,11 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 DestinatarioRazonSocial = dto.DestinatarioRazonSocial,
                 TransportistaRuc = dto.TransportistaRuc,
                 TransportistaRazonSocial = dto.TransportistaRazonSocial,
-                VehiculoPlaca = dto.VehiculoPlaca,
+                VehiculoPlaca = GuiaValidaciones.NormalizarPlaca(dto.VehiculoPlaca),
                 ConductorNombres = dto.ConductorNombres,
-                ConductorLicencia = dto.ConductorLicencia,
+                ConductorLicencia = GuiaValidaciones.NormalizarLicencia(dto.ConductorLicencia),
                 ConductorDni = dto.ConductorDni?.Trim(),
+                ConductorApellidos = string.IsNullOrWhiteSpace(dto.ConductorApellidos) ? null : dto.ConductorApellidos.Trim(),
                 Observacion = dto.Observacion,
                 ReferenciaTipo = dto.ReferenciaTipo,
                 ReferenciaId = dto.ReferenciaId,
@@ -176,6 +179,57 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
 
             guia.DespachoAplicado = true;
             await ctx.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Reglas de SUNAT que se exigen recién al transmitir (un borrador puede estar incompleto).
+        /// Junta todos los problemas en un solo mensaje para corregirlos de una vez.
+        /// </summary>
+        private void ValidarParaTransmitir(GuiaRemision guia)
+        {
+            var problemas = new List<string>();
+            var propio = guia.AlmacenDestinoId.HasValue;
+
+            if (!guia.Items.Any()) problemas.Add("la guía no tiene productos");
+            if (guia.PesoBrutoTotal <= 0) problemas.Add("falta el peso bruto total");
+
+            void RevisarAlmacen(string rol, Abril_Backend.Features.PersonasModule.Infrastructure.Models.Almacen? a)
+            {
+                if (a == null) return;
+                if (string.IsNullOrWhiteSpace(a.Direccion)) problemas.Add($"el almacén de {rol} «{a.Nombre}» no tiene dirección");
+                if (a.Ubigeo == null || a.Ubigeo.Length != 6 || !a.Ubigeo.All(char.IsDigit)) problemas.Add($"el almacén de {rol} «{a.Nombre}» no tiene ubigeo de 6 dígitos");
+            }
+            RevisarAlmacen("origen", guia.AlmacenOrigen);
+            RevisarAlmacen("llegada", guia.AlmacenDestino);
+
+            if (guia.MotivoTraslado == "04")
+            {
+                if (!propio) problemas.Add("el traslado entre establecimientos de la misma empresa requiere un almacén de destino");
+                else if (guia.AlmacenDestinoId == guia.AlmacenOrigenId) problemas.Add("el almacén de destino no puede ser el mismo que el de origen");
+            }
+            else if (!propio)
+            {
+                if (!GuiaValidaciones.RucValido(guia.DestinatarioRuc)) problemas.Add("el RUC del destinatario no es válido");
+                else if (guia.DestinatarioRuc == _settings.Ruc) problemas.Add("para este motivo el destinatario no puede ser tu propia empresa");
+                if (string.IsNullOrWhiteSpace(guia.DestinatarioRazonSocial)) problemas.Add("falta la razón social del destinatario");
+            }
+
+            if (guia.ModalidadTraslado == "01")
+            {
+                if (!GuiaValidaciones.RucValido(guia.TransportistaRuc)) problemas.Add("el RUC del transportista no es válido");
+                else if (guia.TransportistaRuc == _settings.Ruc) problemas.Add("en transporte público el transportista es otra empresa; si llevas tú la carga usa transporte privado");
+                if (string.IsNullOrWhiteSpace(guia.TransportistaRazonSocial)) problemas.Add("falta la razón social del transportista");
+            }
+            else
+            {
+                if (!GuiaValidaciones.PlacaValida(GuiaValidaciones.NormalizarPlaca(guia.VehiculoPlaca))) problemas.Add("la placa del vehículo no es válida (6 o 7 letras/números)");
+                if (string.IsNullOrWhiteSpace(guia.ConductorNombres)) problemas.Add("falta el nombre del conductor");
+                if (!GuiaValidaciones.DniValido(guia.ConductorDni)) problemas.Add("falta el DNI del conductor (8 dígitos)");
+                if (!GuiaValidaciones.LicenciaValida(GuiaValidaciones.NormalizarLicencia(guia.ConductorLicencia))) problemas.Add("la licencia del conductor no es válida (8 a 12 letras/números)");
+            }
+
+            if (problemas.Count > 0)
+                throw new AbrilException("No se puede transmitir todavía: " + string.Join("; ", problemas) + ".", 400);
         }
 
         /// <summary>Verifica antes de transmitir que el almacén de origen tiene el stock de toda la guía.</summary>
@@ -277,7 +331,18 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             if (guia.Estado != "BORRADOR" && guia.Estado != "RECHAZADA")
                 throw new AbrilException($"Esta guía ya fue transmitida (estado {guia.Estado}) — no se puede reenviar.", 400);
 
-            // La guía lleva mercadería: se confirma que hay stock ANTES de gastar un correlativo.
+            // Antes de gastar un correlativo: que los datos estén completos para SUNAT y que haya stock.
+            ValidarParaTransmitir(guia);
+
+            // Una guía puede haber quedado en borrador desde un día anterior: SUNAT no admite un inicio de
+            // traslado anterior a la emisión, así que la fecha pasa a hoy (queda guardada, el PDF coincide).
+            var hoy = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5));
+            if (guia.FechaTraslado < hoy)
+            {
+                guia.FechaTraslado = hoy;
+                await ctx.SaveChangesAsync();
+            }
+
             await ValidarStockOrigen(ctx, guia);
 
             // Correlativo SUNAT: se toma recién ahora y queda fijo en la guía, de modo que un reintento
@@ -592,6 +657,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 ConductorNombres = guia.ConductorNombres,
                 ConductorLicencia = guia.ConductorLicencia,
                 ConductorDni = guia.ConductorDni,
+                ConductorApellidos = guia.ConductorApellidos,
                 EmisorRuc = _settings.Ruc,
                 EmisorRazonSocial = _settings.RazonSocial,
                 AlmacenOrigenDireccion = guia.AlmacenOrigen.Direccion,

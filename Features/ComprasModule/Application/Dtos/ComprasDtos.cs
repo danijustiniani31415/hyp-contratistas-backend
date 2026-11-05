@@ -134,6 +134,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Dtos
         public string? VehiculoPlaca { get; set; }
         public string? ConductorNombres { get; set; }
         public string? ConductorLicencia { get; set; }
+        public string? ConductorDni { get; set; }
         public string? Observacion { get; set; }
     }
 

@@ -111,6 +111,9 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<Area> Area { get; set; }
         public DbSet<SubArea> SubArea { get; set; }
         public DbSet<ConstructionSiteLogbookControl> ConstructionSiteLogbookControl { get;set; }
+        public DbSet<GuiaTransportista> GuiaTransportista { get; set; }
+        public DbSet<GuiaVehiculo> GuiaVehiculo { get; set; }
+        public DbSet<GuiaConductor> GuiaConductor { get; set; }
         public DbSet<DocumentIdentityType> DocumentIdentityType { get; set; }
         public DbSet<ImageType> ImageType { get; set; }
         public DbSet<IvtControlPdf> IvtControlPdf { get;set; }

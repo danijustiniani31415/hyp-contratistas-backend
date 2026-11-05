@@ -409,6 +409,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                 VehiculoPlaca = dto.VehiculoPlaca,
                 ConductorNombres = dto.ConductorNombres,
                 ConductorLicencia = dto.ConductorLicencia,
+                ConductorDni = dto.ConductorDni,
                 Observacion = dto.Observacion ?? $"Devolución de mercadería — orden de compra {orden.Codigo}",
                 ReferenciaTipo = "ORDEN_COMPRA",
                 ReferenciaId = orden.Id,

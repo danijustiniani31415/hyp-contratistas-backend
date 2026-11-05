@@ -45,6 +45,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string? ConductorNombres { get; set; }
         public string? ConductorLicencia { get; set; }
         public string? ConductorDni { get; set; }
+        public string? ConductorApellidos { get; set; }
 
         public string? Observacion { get; set; }
         public string? ReferenciaTipo { get; set; }
@@ -99,6 +100,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string? ConductorNombres { get; set; }
         public string? ConductorLicencia { get; set; }
         public string? ConductorDni { get; set; }
+        public string? ConductorApellidos { get; set; }
 
         // Datos para la representación impresa (PDF con QR) de la guía.
         public string EmisorRuc { get; set; } = null!;

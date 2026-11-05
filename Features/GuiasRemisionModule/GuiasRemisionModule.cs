@@ -12,6 +12,7 @@ namespace Abril_Backend.Features.GuiasRemisionModule
         {
             services.Configure<SunatGreSettings>(configuration.GetSection("SunatGre"));
             services.AddScoped<IGuiaRemisionService, GuiaRemisionService>();
+            services.AddScoped<IGuiaMaestrosService, GuiaMaestrosService>();
             services.AddScoped<IGuiaRemisionXmlBuilder, GuiaRemisionUblXmlBuilder>();
             services.AddScoped<IXmlSigner, XmlDsigSigner>();
             services.AddHttpClient<ISunatGreClient, SunatGreRestClient>()

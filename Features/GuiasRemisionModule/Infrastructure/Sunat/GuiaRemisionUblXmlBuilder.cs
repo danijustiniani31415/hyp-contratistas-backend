@@ -142,10 +142,20 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat
             {
                 // El nombre se guarda como "Apellidos Nombres" (ej. FLORES VILCA MELVIN NEBER): los dos
                 // primeros términos son apellidos y el resto nombres; con menos de 3 términos, 1 apellido.
-                var partes = guia.ConductorNombres.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var nApellidos = partes.Length >= 3 ? 2 : 1;
-                var apellido = string.Join(' ', partes.Take(nApellidos));
-                var nombre = partes.Length > nApellidos ? string.Join(' ', partes.Skip(nApellidos)) : apellido;
+                string apellido, nombre;
+                if (!string.IsNullOrWhiteSpace(guia.ConductorApellidos))
+                {
+                    // Guías nuevas: apellidos y nombres vienen separados (de los datos maestros o del formulario).
+                    apellido = guia.ConductorApellidos.Trim();
+                    nombre = guia.ConductorNombres.Trim();
+                }
+                else
+                {
+                    var partes = guia.ConductorNombres.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    var nApellidos = partes.Length >= 3 ? 2 : 1;
+                    apellido = string.Join(' ', partes.Take(nApellidos));
+                    nombre = partes.Length > nApellidos ? string.Join(' ', partes.Skip(nApellidos)) : apellido;
+                }
                 stage.Add(new XElement(Cac + "DriverPerson",
                     new XElement(Cbc + "ID", new XAttribute("schemeID", "1"), guia.ConductorDni),
                     new XElement(Cbc + "FirstName", nombre),

@@ -36,6 +36,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
         public string? ConductorLicencia { get; set; }
         /// <summary>DNI del conductor: SUNAT lo exige como documento de identidad (la licencia va aparte).</summary>
         public string? ConductorDni { get; set; }
+        /// <summary>Apellidos del conductor (los nombres van en ConductorNombres). Null en guías antiguas: ahí
+        /// ConductorNombres trae "Apellidos Nombres" juntos y el XML los separa por posición.</summary>
+        public string? ConductorApellidos { get; set; }
 
         public string? Observacion { get; set; }
         public string? ReferenciaTipo { get; set; }
