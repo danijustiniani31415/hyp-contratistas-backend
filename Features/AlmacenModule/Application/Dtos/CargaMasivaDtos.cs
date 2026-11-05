@@ -9,6 +9,8 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public int CategoriaId { get; set; }
         public string UnidadMedida { get; set; } = "UND";
         public bool RequiereTalla { get; set; }
+        /// <summary>true si el producto se maneja por color (variante, como la talla): pintura, cinta aislante…</summary>
+        public bool RequiereColor { get; set; }
         /// <summary>ROPA, CALZADO o GUANTES — obligatorio si RequiereTalla.</summary>
         public string? TipoTalla { get; set; }
     }

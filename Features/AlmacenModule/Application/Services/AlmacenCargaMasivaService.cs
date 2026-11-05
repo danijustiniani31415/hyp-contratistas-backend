@@ -91,6 +91,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                                     UnidadMedida = string.IsNullOrWhiteSpace(nuevo.UnidadMedida) ? "UND" : nuevo.UnidadMedida.Trim().ToUpperInvariant(),
                                     RequiereTalla = nuevo.RequiereTalla,
                                     TipoTalla = nuevo.RequiereTalla ? nuevo.TipoTalla : null,
+                                    RequiereColor = nuevo.RequiereColor,
                                 });
                                 productoId = creado.Id;
                                 r.ProductoCreado = true;
@@ -103,6 +104,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
 
                     // La talla solo aplica a productos que la exigen; en los demás se ignora lo que traiga el Excel.
                     string talla;
+                    string color;
                     using (var ctx = _factory.CreateDbContext())
                     {
                         var p = await ctx.Producto.AsNoTracking().FirstOrDefaultAsync(x => x.Id == productoId)
@@ -110,6 +112,22 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                         talla = p.RequiereTalla ? (fila.Talla ?? "").Trim().ToUpperInvariant() : "";
                         if (p.RequiereTalla && talla.Length == 0)
                             throw new AbrilException($"«{p.Nombre}» requiere talla y la fila no la trae.", 400);
+
+                        // El color es una variante igual que la talla: solo aplica a productos que lo manejan y
+                        // debe ser uno de la lista de colores del sistema (se toma su escritura oficial: «rojo» → «Rojo»).
+                        color = "";
+                        if (p.RequiereColor)
+                        {
+                            var pedido = (fila.Color ?? "").Trim();
+                            if (pedido.Length == 0)
+                                throw new AbrilException($"«{p.Nombre}» maneja color y la fila no lo trae.", 400);
+                            var colores = await ctx.CatalogoValor.AsNoTracking()
+                                .Where(c => c.Tipo == "COLOR" && c.Activo)
+                                .Select(c => c.Valor)
+                                .ToListAsync();
+                            color = colores.FirstOrDefault(c => string.Equals(SinTildes(c), SinTildes(pedido), StringComparison.OrdinalIgnoreCase))
+                                ?? throw new AbrilException($"El color «{pedido}» no está en la lista de colores del sistema.", 400);
+                        }
                     }
 
                     await _kardex.RegistrarMovimiento(new RegistrarMovimientoDto
@@ -117,7 +135,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                         AlmacenId = dto.AlmacenId,
                         ProductoId = productoId,
                         Talla = talla,
-                        Color = (fila.Color ?? "").Trim(),
+                        Color = color,
                         TipoMovimiento = "INGRESO",
                         Cantidad = fila.Cantidad,
                         CostoUnitario = fila.CostoUnitario,
@@ -141,6 +159,12 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
             }
 
             return resultado;
+        }
+
+        private static string SinTildes(string s)
+        {
+            var d = s.Normalize(System.Text.NormalizationForm.FormD);
+            return new string(d.Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray());
         }
     }
 }
