@@ -27,8 +27,8 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             _http = http;
             _apiKey = config["Gemini:ApiKey"];
             Modelos = (
-                config["Gemini:ModeloRapido"] ?? "gemini-2.5-flash-lite",
-                config["Gemini:ModeloPreciso"] ?? "gemini-2.5-flash");
+                config["Gemini:ModeloRapido"] ?? "gemini-3.5-flash-lite",
+                config["Gemini:ModeloPreciso"] ?? "gemini-3.5-flash");
         }
 
         public (string Rapido, string Preciso) Modelos { get; }
@@ -42,6 +42,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             "- serie y numero van separados (ej. E001-196 → serie E001, numero 196; F283-0000413 → serie F283, numero 413).\n" +
             "- tipo: FACTURA, BOLETA, NOTA_CREDITO, NOTA_DEBITO, RECIBO_HONORARIOS, TICKET, GUIA_REMISION, INVOICE_EXTRANJERO u OTRO.\n" +
             "- moneda: PEN (soles) o USD (dólares).\n" +
+            "- fechaEmision y fechaVencimiento en formato yyyy-MM-dd (en Perú las fechas impresas son día/mes/año: 03/11/2026 es el 3 de noviembre).\n" +
             "- subtotal es el valor de venta SIN IGV; igv es el IGV; total es el importe total a pagar.\n" +
             "- Cada línea: descripcion completa, cantidad, unidad (UNIDAD, KG, PAR, CAJA…), precioUnitario SIN IGV si se distingue, total de la línea.\n" +
             "- categoria de cada línea: BIEN (material, herramienta o EPP que se guarda en almacén), SERVICIO (reparación, alquiler, mano de obra), " +
@@ -160,14 +161,47 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             l.Serie = l.Serie?.Trim().ToUpperInvariant();
             l.Numero = l.Numero == null ? null : (l.Numero.Trim().TrimStart('0') is { Length: > 0 } n ? n : l.Numero.Trim());
             l.Moneda = l.Moneda?.ToUpperInvariant() == "USD" ? "USD" : "PEN";
-            l.Tipo = (l.Tipo ?? "OTRO").Trim().ToUpperInvariant();
+            l.Tipo = TipoNormalizado(l.Tipo);
+            l.FechaEmision = FechaIso(l.FechaEmision);
+            l.FechaVencimiento = FechaIso(l.FechaVencimiento);
             l.Confianza = Math.Clamp(l.Confianza, 0, 1);
             foreach (var it in l.Items)
             {
                 it.Descripcion = it.Descripcion.Trim();
-                it.Categoria = (it.Categoria ?? "OTRO").Trim().ToUpperInvariant();
+                var cat = (it.Categoria ?? "OTRO").Trim().ToUpperInvariant();
+                it.Categoria = cat is "BIEN" or "SERVICIO" or "PASAJE_VIATICO" or "ACTIVO" ? cat : "OTRO";
             }
             return l;
+        }
+
+        /// <summary>El modelo a veces escribe «FACTURA ELECTRONICA» o «factura»: se lleva a los códigos que usa el sistema.</summary>
+        private static string TipoNormalizado(string? t)
+        {
+            var n = (t ?? "").ToUpperInvariant().Replace('Á', 'A').Replace('É', 'E').Replace('Í', 'I').Replace('Ó', 'O').Replace('Ú', 'U');
+            if (n.Contains("CREDITO")) return "NOTA_CREDITO";
+            if (n.Contains("DEBITO")) return "NOTA_DEBITO";
+            if (n.Contains("INVOICE")) return "INVOICE_EXTRANJERO";
+            if (n.Contains("FACTURA")) return "FACTURA";
+            if (n.Contains("BOLETA")) return "BOLETA";
+            if (n.Contains("HONORARIOS")) return "RECIBO_HONORARIOS";
+            if (n.Contains("TICKET")) return "TICKET";
+            if (n.Contains("GUIA")) return "GUIA_REMISION";
+            return "OTRO";
+        }
+
+        /// <summary>Las fechas peruanas vienen como 03/11/2026 (día/mes/año): se pasan a yyyy-MM-dd; si no se entiende, null.</summary>
+        private static string? FechaIso(string? f)
+        {
+            if (string.IsNullOrWhiteSpace(f)) return null;
+            f = f.Trim();
+            if (DateOnly.TryParseExact(f, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var iso))
+                return iso.ToString("yyyy-MM-dd");
+            var m = System.Text.RegularExpressions.Regex.Match(f, @"^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})");
+            if (m.Success
+                && int.Parse(m.Groups[3].Value) is var a && int.Parse(m.Groups[2].Value) is var mes && int.Parse(m.Groups[1].Value) is var d
+                && mes is >= 1 and <= 12 && d >= 1 && d <= DateTime.DaysInMonth(a, mes))
+                return new DateOnly(a, mes, d).ToString("yyyy-MM-dd");
+            return null;
         }
     }
 }
