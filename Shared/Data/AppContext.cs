@@ -100,6 +100,8 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<OrdenCompra> OrdenCompra { get; set; }
         public DbSet<OrdenCompraItem> OrdenCompraItem { get; set; }
         public DbSet<OrdenCompraRecepcion> OrdenCompraRecepcion { get; set; }
+        public DbSet<ComprobanteCompra> ComprobanteCompra { get; set; }
+        public DbSet<ComprobanteCompraItem> ComprobanteCompraItem { get; set; }
         // ── Las Bravas / HP Constructores: Guías de Remisión (Fase 3) ──
         public DbSet<GuiaRemision> GuiaRemision { get; set; }
         public DbSet<GuiaRemisionItem> GuiaRemisionItem { get; set; }
