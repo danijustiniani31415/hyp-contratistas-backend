@@ -45,6 +45,19 @@ namespace Abril_Backend.Features.ComprasModule.Infrastructure.Models
         public ICollection<ComprobanteCompraItem> Items { get; set; } = new List<ComprobanteCompraItem>();
     }
 
+    /// <summary>Copia del PDF/foto original. Vive en la base porque el servidor no tiene almacenamiento de archivos.
+    /// ComprobanteCompraId es null mientras el comprobante está leído pero sin confirmar.</summary>
+    [Table("lb_comprobante_compra_archivo")]
+    public class ComprobanteCompraArchivo
+    {
+        public long Id { get; set; }
+        public long? ComprobanteCompraId { get; set; }
+        public string Nombre { get; set; } = null!;
+        public string Mime { get; set; } = null!;
+        public byte[] Contenido { get; set; } = null!;
+        public DateTimeOffset CreadoEn { get; set; }
+    }
+
     [Table("lb_comprobante_compra_item")]
     public class ComprobanteCompraItem
     {

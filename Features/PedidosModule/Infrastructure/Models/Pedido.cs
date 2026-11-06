@@ -29,11 +29,14 @@ namespace Abril_Backend.Features.PedidosModule.Infrastructure.Models
         public long? EntregadoPorUsuarioSistemaId { get; set; }
         public DateTimeOffset? EntregadoEn { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
+        public int? ContratoId { get; set; }
 
         [ForeignKey(nameof(ProyectoId))]
         public Proyecto? Proyecto { get; set; }
         [ForeignKey(nameof(AlmacenId))]
         public Almacen? Almacen { get; set; }
+        [ForeignKey(nameof(ContratoId))]
+        public Contrato? Contrato { get; set; }
         [ForeignKey(nameof(SolicitanteUsuarioSistemaId))]
         public UsuarioSistema? Solicitante { get; set; }
         [ForeignKey(nameof(VisadoPorUsuarioSistemaId))]

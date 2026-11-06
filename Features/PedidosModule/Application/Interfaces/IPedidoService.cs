@@ -13,16 +13,17 @@ namespace Abril_Backend.Features.PedidosModule.Application.Interfaces
         Task<PedidoListResponseDto> List(string? estado, int? proyectoId, bool soloPropios, HashSet<int>? proyectosPermitidos, long usuarioSistemaId, int page, int pageSize);
         Task<PedidoDetailDto> GetById(long id);
 
-        /// <summary>Primer nivel de aprobación — el Residente visa el pedido de mina antes de que
-        /// pase a Gerencia. PENDIENTE → PENDIENTE_GERENTE.</summary>
-        Task<PedidoDetailDto> Visar(long id, long visadorId, LbScopeProyectos scope);
-        /// <summary>Rechazo en el nivel de visado (Residente) — PENDIENTE → RECHAZADO.</summary>
-        Task<PedidoDetailDto> RechazarVisado(long id, long visadorId, RechazarPedidoDto dto, LbScopeProyectos scope);
+        /// <summary>Primer nivel de aprobación — el Residente visa el pedido de mina, resolviendo
+        /// cada ítem (aprobado completo, aprobado con cantidad reducida, o rechazado). Si al menos
+        /// un ítem queda vivo: PENDIENTE → PENDIENTE_GERENTE. Si todos se rechazan: PENDIENTE →
+        /// RECHAZADO.</summary>
+        Task<PedidoDetailDto> Visar(long id, long visadorId, PedidoDecisionDto dto, LbScopeProyectos scope);
 
-        /// <summary>Segundo nivel, definitivo — PENDIENTE_GERENTE → APROBADO.</summary>
-        Task<PedidoDetailDto> Aprobar(long id, long aprobadorId, LbScopeProyectos scope);
-        /// <summary>Rechazo en el nivel de Gerencia — PENDIENTE_GERENTE → RECHAZADO.</summary>
-        Task<PedidoDetailDto> Rechazar(long id, long aprobadorId, RechazarPedidoDto dto, LbScopeProyectos scope);
+        /// <summary>Segundo nivel, definitivo — Gerencia resuelve cada ítem que el Residente dejó
+        /// VISADO (no puede tocar los que el Residente ya rechazó, y no puede aprobar más cantidad
+        /// de la que el Residente visó). Si al menos un ítem queda aprobado: PENDIENTE_GERENTE →
+        /// APROBADO. Si todos terminan rechazados: PENDIENTE_GERENTE → RECHAZADO.</summary>
+        Task<PedidoDetailDto> Aprobar(long id, long aprobadorId, PedidoDecisionDto dto, LbScopeProyectos scope);
         Task<PedidoDetailDto> Entregar(long id, long entregadorId, LbScopeProyectos scope);
         Task<PedidoDetailDto> Cancelar(long id, long solicitanteId);
 
@@ -39,5 +40,16 @@ namespace Abril_Backend.Features.PedidosModule.Application.Interfaces
         /// <summary>Ítems ya recibidos en almacén (de Lima) listos para despachar con guía —
         /// alimenta el selector "Despachar pedido" al crear una Guía de Remisión.</summary>
         Task<List<PendienteDespachoDto>> ListPendientesDeDespacho(HashSet<int>? proyectosPermitidos);
+
+        /// <summary>Bitácora de decisiones por ítem de este pedido (quién redujo/rechazó cada
+        /// línea y cuándo) — Fase E, control fino de auditoría.</summary>
+        Task<List<PedidoItemHistorialDto>> GetHistorial(long pedidoId);
+
+        Task<List<ContratoDto>> ListContratos(int proyectoId);
+        Task<ContratoDto> CrearContrato(ContratoCreateDto dto);
+        Task<List<PartidaDto>> ListPartidas(int proyectoId);
+        Task<PartidaDto> CrearPartida(PartidaCreateDto dto);
+        Task<List<MonedaDto>> ListMonedas();
+        Task<ConsumoPartidaDto> GetConsumoPartida(int partidaId);
     }
 }

@@ -6,7 +6,6 @@ using Abril_Backend.Features.ComprasModule.Application.Interfaces;
 using Abril_Backend.Features.ComprasModule.Infrastructure.Models;
 using Abril_Backend.Features.PersonasModule;
 using Abril_Backend.Infrastructure.Data;
-using Abril_Backend.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace Abril_Backend.Features.ComprasModule.Application.Services
@@ -33,22 +32,26 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
 
         private readonly IDbContextFactory<AppDbContext> _factory;
         private readonly IComprobanteLectorService _lector;
-        private readonly IFileStorageService _storage;
-        private readonly IStorageContainerResolver _containers;
         private readonly IAlmacenKardexService _almacen;
 
         public ComprobanteCompraService(
             IDbContextFactory<AppDbContext> factory,
             IComprobanteLectorService lector,
-            IFileStorageService storage,
-            IStorageContainerResolver containers,
             IAlmacenKardexService almacen)
         {
             _factory = factory;
             _lector = lector;
-            _storage = storage;
-            _containers = containers;
             _almacen = almacen;
+        }
+
+        private const string RutaArchivos = "/api/v1/compras/comprobantes/archivos/";
+
+        public async Task<(byte[] Contenido, string Mime, string Nombre)> GetArchivo(long id)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var a = await ctx.ComprobanteCompraArchivo.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id)
+                ?? throw new AbrilException("Archivo no encontrado.", 404);
+            return (a.Contenido, a.Mime, a.Nombre);
         }
 
         public async Task<ComprobanteLecturaResultDto> Leer(Stream archivo, string nombreArchivo, string mimeType, long usuarioId)
@@ -85,20 +88,34 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                 }
             }
 
+            using var ctx = _factory.CreateDbContext();
+
+            // La copia del archivo se guarda en la base; si algo falla el comprobante se puede registrar igual.
             string? url = null;
             try
             {
-                var nombre = $"{Guid.NewGuid()}{extension}";
-                var subidos = await _storage.UploadFilesAsync(new[] { ((Stream)new MemoryStream(bytes), nombre) },
-                    _containers.GetInvoicesContainerName());
-                url = subidos.FirstOrDefault();
+                // Lo leído que nunca se confirmó (sin comprobante) se limpia al día siguiente.
+                var limite = DateTimeOffset.UtcNow.AddDays(-1);
+                await ctx.ComprobanteCompraArchivo.Where(a => a.ComprobanteCompraId == null && a.CreadoEn < limite).ExecuteDeleteAsync();
+
+                var archivoGuardado = new ComprobanteCompraArchivo
+                {
+                    Nombre = Path.GetFileName(nombreArchivo ?? "comprobante" + extension) is { Length: > 0 } n
+                        ? (n.Length > 200 ? n[^200..] : n)
+                        : "comprobante" + extension,
+                    Mime = mimeType,
+                    Contenido = bytes,
+                    CreadoEn = DateTimeOffset.UtcNow,
+                };
+                ctx.ComprobanteCompraArchivo.Add(archivoGuardado);
+                await ctx.SaveChangesAsync();
+                url = RutaArchivos + archivoGuardado.Id;
             }
             catch (Exception)
             {
                 avisos.Add(new ComprobanteAdvertenciaDto { Nivel = "AVISO", Mensaje = "No se pudo guardar la copia del archivo; se puede registrar igual." });
             }
 
-            using var ctx = _factory.CreateDbContext();
             int? proveedorId = null;
             long? duplicado = null;
             if (!string.IsNullOrEmpty(lectura.EmisorRuc))
@@ -245,6 +262,13 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                     });
                 ctx.ComprobanteCompra.Add(comprobante);
                 await ctx.SaveChangesAsync();
+
+                // La copia leída pasa a pertenecer a este comprobante (ya no se limpia como huérfana).
+                var m = System.Text.RegularExpressions.Regex.Match(dto.ArchivoUrl ?? "", @"/archivos/(\d+)$");
+                if (m.Success && long.TryParse(m.Groups[1].Value, out var archivoId))
+                    await ctx.ComprobanteCompraArchivo
+                        .Where(a => a.Id == archivoId && a.ComprobanteCompraId == null)
+                        .ExecuteUpdateAsync(s => s.SetProperty(a => a.ComprobanteCompraId, comprobante.Id));
             }
 
             // Ingresos al kardex, uno por línea. Cada línea queda marcada al aplicarse, así un reintento no duplica.

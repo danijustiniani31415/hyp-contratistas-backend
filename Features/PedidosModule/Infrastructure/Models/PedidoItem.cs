@@ -15,10 +15,20 @@ namespace Abril_Backend.Features.PedidosModule.Infrastructure.Models
         /// de Pedido.Observacion, que es para todo el pedido.</summary>
         public string? Observacion { get; set; }
         public decimal CantidadSolicitada { get; set; }
-        /// <summary>Null hasta que se entrega. Hoy siempre = CantidadSolicitada (se valida stock
-        /// completo antes de entregar) — separado de CantidadSolicitada para permitir entrega
-        /// parcial más adelante sin otra migración.</summary>
+        /// <summary>Null hasta que se entrega. Igual a CantidadAprobada (se valida stock completo
+        /// antes de entregar) — separado de CantidadAprobada por si más adelante se permite
+        /// entrega parcial además de aprobación parcial.</summary>
         public decimal? CantidadEntregada { get; set; }
+        public int? PartidaId { get; set; }
+
+        /// <summary>Cada ítem se resuelve individualmente en Visar/Aprobar — el Residente o
+        /// Gerencia puede reducir la cantidad o rechazar un ítem puntual sin tumbar el resto del
+        /// pedido. Null hasta que el ítem pasa por su primera decisión (Visar); de ahí en adelante
+        /// siempre igual a CantidadSolicitada (si se aprobó completo) o menor (si se redujo).
+        /// Ignorado si Estado = RECHAZADO.</summary>
+        public decimal? CantidadAprobada { get; set; }
+        public string Estado { get; set; } = "PENDIENTE";
+        public string? MotivoRechazo { get; set; }
 
         /// <summary>
         /// Trazabilidad cuando el ítem no sale directo de stock (Entregar) sino que hay que
@@ -35,5 +45,7 @@ namespace Abril_Backend.Features.PedidosModule.Infrastructure.Models
         public Pedido? Pedido { get; set; }
         [ForeignKey(nameof(ProductoId))]
         public Producto? Producto { get; set; }
+        [ForeignKey(nameof(PartidaId))]
+        public Partida? Partida { get; set; }
     }
 }

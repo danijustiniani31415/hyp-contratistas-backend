@@ -203,6 +203,7 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                     CostoUnitario = costoMovimiento,
                     ReferenciaTipo = dto.ReferenciaTipo,
                     ReferenciaId = dto.ReferenciaId,
+                    PartidaId = dto.PartidaId,
                     UsuarioSistemaId = usuarioSistemaId,
                     CreadoEn = DateTimeOffset.UtcNow,
                 });

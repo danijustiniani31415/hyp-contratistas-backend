@@ -14,6 +14,8 @@ namespace Abril_Backend.Features.ComprasModule.Application.Interfaces
     public interface IComprobanteCompraService
     {
         Task<ComprobanteLecturaResultDto> Leer(Stream archivo, string nombreArchivo, string mimeType, long usuarioId);
+        /// <summary>Copia del PDF/foto original de un comprobante (guardada en la base).</summary>
+        Task<(byte[] Contenido, string Mime, string Nombre)> GetArchivo(long id);
         Task<ComprobanteGuardadoDto> Guardar(ComprobanteGuardarDto dto, long usuarioId, Abril_Backend.Features.PersonasModule.LbScopeProyectos scope);
     }
 }

@@ -20,6 +20,11 @@ namespace Abril_Backend.Features.AlmacenModule.Infrastructure.Models
         /// <summary>PEDIDO, COMPRA, ENTREGA_EPP, PRESTAMO_HERRAMIENTA — null para ajustes manuales.</summary>
         public string? ReferenciaTipo { get; set; }
         public long? ReferenciaId { get; set; }
+        /// <summary>Partida presupuestal a la que se imputa este movimiento (control de costos,
+        /// Fase 3) — sin navegación a PedidosModule.Partida a propósito, para no invertir la
+        /// dependencia entre módulos (Pedidos ya depende de Almacén, no al revés); se resuelve por
+        /// Id plano, igual que ReferenciaId.</summary>
+        public int? PartidaId { get; set; }
         public long? UsuarioSistemaId { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
 

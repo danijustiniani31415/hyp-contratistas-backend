@@ -44,6 +44,7 @@ using Abril_Backend.Features.EppModule.Infrastructure.Models;
 using Abril_Backend.Features.HerramientasModule.Infrastructure.Models;
 using Abril_Backend.Features.ComprasModule.Infrastructure.Models;
 using Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models;
+using Abril_Backend.Features.NotificacionesModule.Infrastructure.Models;
 
 namespace Abril_Backend.Infrastructure.Data
 {
@@ -89,6 +90,14 @@ namespace Abril_Backend.Infrastructure.Data
         // ── Las Bravas / HP Constructores: Pedidos (Fase 2) ──
         public DbSet<Pedido> Pedido { get; set; }
         public DbSet<PedidoItem> PedidoItem { get; set; }
+        public DbSet<Contrato> Contrato { get; set; }
+        public DbSet<Partida> Partida { get; set; }
+        public DbSet<Moneda> Moneda { get; set; }
+        public DbSet<PedidoItemHistorial> PedidoItemHistorial { get; set; }
+        // ── Las Bravas / HP Constructores: Motor de Notificaciones (Fase 3, punto 9) ──
+        public DbSet<NotifRegla> NotifRegla { get; set; }
+        public DbSet<NotifDestinatarioExtra> NotifDestinatarioExtra { get; set; }
+        public DbSet<NotifEnvio> NotifEnvio { get; set; }
         // ── Las Bravas / HP Constructores: EPP (Fase 2) ──
         public DbSet<EntregaEpp> EntregaEpp { get; set; }
         public DbSet<EntregaEppItem> EntregaEppItem { get; set; }
@@ -102,9 +111,13 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<OrdenCompraRecepcion> OrdenCompraRecepcion { get; set; }
         public DbSet<ComprobanteCompra> ComprobanteCompra { get; set; }
         public DbSet<ComprobanteCompraItem> ComprobanteCompraItem { get; set; }
+        public DbSet<ComprobanteCompraArchivo> ComprobanteCompraArchivo { get; set; }
         // ── Las Bravas / HP Constructores: Guías de Remisión (Fase 3) ──
         public DbSet<GuiaRemision> GuiaRemision { get; set; }
         public DbSet<GuiaRemisionItem> GuiaRemisionItem { get; set; }
+        public DbSet<GuiaTransportista> GuiaTransportista { get; set; }
+        public DbSet<GuiaVehiculo> GuiaVehiculo { get; set; }
+        public DbSet<GuiaConductor> GuiaConductor { get; set; }
         // ── Las Bravas / HP Constructores: Planillas — motor de cálculo (Fase 3) ──
         public DbSet<ConceptoPlanilla> ConceptoPlanilla { get; set; }
         public DbSet<PlanillaPeriodo> PlanillaPeriodo { get; set; }
@@ -114,9 +127,6 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<Area> Area { get; set; }
         public DbSet<SubArea> SubArea { get; set; }
         public DbSet<ConstructionSiteLogbookControl> ConstructionSiteLogbookControl { get;set; }
-        public DbSet<GuiaTransportista> GuiaTransportista { get; set; }
-        public DbSet<GuiaVehiculo> GuiaVehiculo { get; set; }
-        public DbSet<GuiaConductor> GuiaConductor { get; set; }
         public DbSet<DocumentIdentityType> DocumentIdentityType { get; set; }
         public DbSet<ImageType> ImageType { get; set; }
         public DbSet<IvtControlPdf> IvtControlPdf { get;set; }

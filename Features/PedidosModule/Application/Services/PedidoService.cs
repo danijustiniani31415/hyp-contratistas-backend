@@ -121,6 +121,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                 Codigo = codigo,
                 ProyectoId = dto.ProyectoId,
                 AlmacenId = dto.AlmacenId,
+                ContratoId = dto.ContratoId,
                 SolicitanteUsuarioSistemaId = solicitanteId,
                 Estado = "PENDIENTE",
                 Observacion = dto.Observacion,
@@ -146,6 +147,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     Color = item.Color,
                     Observacion = item.Observacion,
                     CantidadSolicitada = item.CantidadSolicitada,
+                    PartidaId = item.PartidaId,
                 });
             }
             await ctx.SaveChangesAsync();
@@ -217,119 +219,172 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
-        public async Task<PedidoDetailDto> Visar(long id, long visadorId, LbScopeProyectos scope)
+        /// <summary>Resuelve cada ítem del pedido según <paramref name="decisiones"/>: acepta solo
+        /// ítems que estén en <paramref name="estadoOrigen"/> (PENDIENTE para Visar, VISADO para
+        /// Aprobar) — un ítem ya RECHAZADO por una etapa anterior no puede volver a decidirse, y
+        /// ninguno puede quedar sin resolver. <paramref name="topeCantidad"/> da el máximo
+        /// permitido de CantidadAprobada por ítem (CantidadSolicitada en Visar; lo que el
+        /// Residente ya visó en Aprobar — Gerencia no puede aprobar más de lo que el Residente
+        /// dejó pasar). Devuelve true si absolutamente todos los ítems terminaron RECHAZADO.
+        /// </summary>
+        private static bool ResolverItems(
+            AppDbContext ctx, Pedido pedido, long usuarioId, string etapaHistorial,
+            List<PedidoItemDecisionDto> decisiones, string estadoOrigen, string estadoDestino,
+            Func<PedidoItem, decimal> topeCantidad)
+        {
+            var pendientes = pedido.Items.Where(i => i.Estado == estadoOrigen).ToList();
+            if (pendientes.Count == 0)
+                throw new AbrilException($"Este pedido no tiene ítems en estado {estadoOrigen} para decidir.", 400);
+
+            var decisionesPorItem = decisiones.ToDictionary(d => d.PedidoItemId);
+            var faltantes = pendientes.Where(i => !decisionesPorItem.ContainsKey(i.Id)).ToList();
+            if (faltantes.Count > 0)
+                throw new AbrilException(
+                    "Falta decidir sobre todos los ítems: " + string.Join(", ", faltantes.Select(i => i.Id)), 400);
+
+            foreach (var item in pendientes)
+            {
+                var decision = decisionesPorItem[item.Id];
+                if (decision.Rechazado)
+                {
+                    if (string.IsNullOrWhiteSpace(decision.MotivoRechazo))
+                        throw new AbrilException($"El ítem {item.Id} necesita un motivo de rechazo.", 400);
+                    item.Estado = "RECHAZADO";
+                    item.MotivoRechazo = decision.MotivoRechazo;
+                }
+                else
+                {
+                    var tope = topeCantidad(item);
+                    if (decision.CantidadAprobada is not > 0 || decision.CantidadAprobada > tope)
+                        throw new AbrilException(
+                            $"La cantidad aprobada del ítem {item.Id} debe ser mayor a 0 y no mayor a {tope}.", 400);
+                    item.CantidadAprobada = decision.CantidadAprobada;
+                    item.Estado = estadoDestino;
+                    item.MotivoRechazo = null;
+                }
+
+                ctx.PedidoItemHistorial.Add(new PedidoItemHistorial
+                {
+                    PedidoItemId = item.Id,
+                    Etapa = etapaHistorial,
+                    UsuarioSistemaId = usuarioId,
+                    EstadoResultante = item.Estado,
+                    CantidadSolicitada = item.CantidadSolicitada,
+                    CantidadAprobada = item.CantidadAprobada,
+                    MotivoRechazo = item.MotivoRechazo,
+                    CreadoEn = DateTimeOffset.UtcNow,
+                });
+            }
+
+            return pedido.Items.All(i => i.Estado == "RECHAZADO");
+        }
+
+        public async Task<PedidoDetailDto> Visar(long id, long visadorId, PedidoDecisionDto dto, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
-            var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
+            var pedido = await ctx.Pedido.Include(p => p.Items).FirstOrDefaultAsync(p => p.Id == id)
+                ?? throw new AbrilException("Pedido no encontrado.", 404);
 
             if (!scope.Permite(pedido.ProyectoId))
                 throw new AbrilException("No tienes permiso para visar pedidos de este proyecto.", 403);
             if (pedido.Estado != "PENDIENTE")
                 throw new AbrilException($"Solo se puede visar un pedido PENDIENTE (está en {pedido.Estado}).", 400);
 
-            pedido.Estado = "PENDIENTE_GERENTE";
+            var todoRechazado = ResolverItems(ctx, pedido, visadorId, "VISADO", dto.Items, "PENDIENTE", "VISADO", i => i.CantidadSolicitada);
+
             pedido.VisadoPorUsuarioSistemaId = visadorId;
             pedido.VisadoEn = DateTimeOffset.UtcNow;
+
+            if (todoRechazado)
+            {
+                pedido.Estado = "RECHAZADO";
+                pedido.MotivoRechazo = "Todos los ítems fueron rechazados en el visado del Residente.";
+            }
+            else
+            {
+                pedido.Estado = "PENDIENTE_GERENTE";
+            }
             await ctx.SaveChangesAsync();
 
             var detalle = await BuildDetail(ctx, id);
 
-            var aprobadores = await GetEmailsConPermiso(ctx, "PEDIDO_APROBAR", pedido.ProyectoId);
-            await NotificarEvento(
-                aprobadores.ToArray(),
-                $"Pedido {detalle.Codigo} visado, pendiente de tu aprobación",
-                $"El pedido <strong>{detalle.Codigo}</strong> ({detalle.Items.Count} producto(s)) en " +
-                $"<strong>{detalle.ProyectoNombre}</strong> ya fue visado por {detalle.VisadoPorNombre} y " +
-                "está listo para tu aprobación final.");
+            if (todoRechazado)
+            {
+                await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                    $"Tu pedido {detalle.Codigo} fue rechazado",
+                    $"Tu pedido <strong>{detalle.Codigo}</strong> fue rechazado por <strong>{detalle.VisadoPorNombre}</strong> " +
+                    "en la revisión del Residente (todos los ítems fueron rechazados).");
+            }
+            else
+            {
+                var aprobadores = await GetEmailsConPermiso(ctx, "PEDIDO_APROBAR", pedido.ProyectoId);
+                await NotificarEvento(
+                    aprobadores.ToArray(),
+                    $"Pedido {detalle.Codigo} visado, pendiente de tu aprobación",
+                    $"El pedido <strong>{detalle.Codigo}</strong> ({detalle.Items.Count} producto(s)) en " +
+                    $"<strong>{detalle.ProyectoNombre}</strong> ya fue visado por {detalle.VisadoPorNombre} y " +
+                    "está listo para tu aprobación final.");
+            }
 
             return detalle;
         }
 
-        public async Task<PedidoDetailDto> RechazarVisado(long id, long visadorId, RechazarPedidoDto dto, LbScopeProyectos scope)
-        {
-            if (string.IsNullOrWhiteSpace(dto.MotivoRechazo))
-                throw new AbrilException("El motivo de rechazo es obligatorio.", 400);
-
-            using var ctx = _factory.CreateDbContext();
-            var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
-
-            if (!scope.Permite(pedido.ProyectoId))
-                throw new AbrilException("No tienes permiso para rechazar pedidos de este proyecto.", 403);
-            if (pedido.Estado != "PENDIENTE")
-                throw new AbrilException($"Solo se puede rechazar en visado un pedido PENDIENTE (está en {pedido.Estado}).", 400);
-
-            pedido.Estado = "RECHAZADO";
-            pedido.MotivoRechazo = dto.MotivoRechazo;
-            pedido.VisadoPorUsuarioSistemaId = visadorId;
-            pedido.VisadoEn = DateTimeOffset.UtcNow;
-            await ctx.SaveChangesAsync();
-
-            var detalle = await BuildDetail(ctx, id);
-            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
-                $"Tu pedido {detalle.Codigo} fue rechazado",
-                $"Tu pedido <strong>{detalle.Codigo}</strong> fue rechazado por <strong>{detalle.VisadoPorNombre}</strong> " +
-                $"en la revisión del Residente.<br/>Motivo: {dto.MotivoRechazo}");
-
-            return detalle;
-        }
-
-        public async Task<PedidoDetailDto> Aprobar(long id, long aprobadorId, LbScopeProyectos scope)
+        public async Task<PedidoDetailDto> Aprobar(long id, long aprobadorId, PedidoDecisionDto dto, LbScopeProyectos scope)
         {
             using var ctx = _factory.CreateDbContext();
-            var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
+            var pedido = await ctx.Pedido.Include(p => p.Items).FirstOrDefaultAsync(p => p.Id == id)
+                ?? throw new AbrilException("Pedido no encontrado.", 404);
 
             if (!scope.Permite(pedido.ProyectoId))
                 throw new AbrilException("No tienes permiso para aprobar pedidos de este proyecto.", 403);
             if (pedido.Estado != "PENDIENTE_GERENTE")
                 throw new AbrilException($"Solo se puede aprobar un pedido ya visado (PENDIENTE_GERENTE) — está en {pedido.Estado}.", 400);
 
-            pedido.Estado = "APROBADO";
+            // Tope = lo que el Residente ya visó para ese ítem (CantidadAprobada quedó en VISADO
+            // con ese valor) — Gerencia puede reducir más, nunca subir por encima de eso.
+            var todoRechazado = ResolverItems(ctx, pedido, aprobadorId, "APROBACION", dto.Items, "VISADO", "APROBADO", i => i.CantidadAprobada!.Value);
+
             pedido.AprobadoPorUsuarioSistemaId = aprobadorId;
             pedido.AprobadoEn = DateTimeOffset.UtcNow;
+
+            if (todoRechazado)
+            {
+                pedido.Estado = "RECHAZADO";
+                pedido.MotivoRechazo = "Todos los ítems fueron rechazados en la aprobación de Gerencia.";
+            }
+            else
+            {
+                pedido.Estado = "APROBADO";
+            }
             await ctx.SaveChangesAsync();
 
             var detalle = await BuildDetail(ctx, id);
-            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
-                $"Tu pedido {detalle.Codigo} fue aprobado",
-                $"Tu pedido <strong>{detalle.Codigo}</strong> fue aprobado por <strong>{detalle.AprobadoPorNombre}</strong> " +
-                "y está listo para ser atendido y entregado.");
 
-            // Recién acá se avisa a quien despacha (Logística/Almacenero) — no antes, porque hasta
-            // este punto el pedido todavía podía ser rechazado en cualquiera de los dos niveles.
-            var entregadores = await GetEmailsConPermiso(ctx, "PEDIDO_ENTREGAR", pedido.ProyectoId);
-            await NotificarEvento(
-                entregadores.ToArray(),
-                $"Pedido {detalle.Codigo} aprobado, pendiente de despacho",
-                $"El pedido <strong>{detalle.Codigo}</strong> ({detalle.Items.Count} producto(s)) de " +
-                $"<strong>{detalle.SolicitanteNombre}</strong> en <strong>{detalle.ProyectoNombre}</strong> ya fue " +
-                $"aprobado por {detalle.AprobadoPorNombre} — está listo para atender y despachar.");
+            if (todoRechazado)
+            {
+                await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                    $"Tu pedido {detalle.Codigo} fue rechazado",
+                    $"Tu pedido <strong>{detalle.Codigo}</strong> fue rechazado por <strong>{detalle.AprobadoPorNombre}</strong> " +
+                    "(todos los ítems fueron rechazados).");
+            }
+            else
+            {
+                await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                    $"Tu pedido {detalle.Codigo} fue aprobado",
+                    $"Tu pedido <strong>{detalle.Codigo}</strong> fue aprobado por <strong>{detalle.AprobadoPorNombre}</strong> " +
+                    "y está listo para ser atendido y entregado.");
 
-            return detalle;
-        }
-
-        public async Task<PedidoDetailDto> Rechazar(long id, long aprobadorId, RechazarPedidoDto dto, LbScopeProyectos scope)
-        {
-            if (string.IsNullOrWhiteSpace(dto.MotivoRechazo))
-                throw new AbrilException("El motivo de rechazo es obligatorio.", 400);
-
-            using var ctx = _factory.CreateDbContext();
-            var pedido = await ctx.Pedido.FindAsync(id) ?? throw new AbrilException("Pedido no encontrado.", 404);
-
-            if (!scope.Permite(pedido.ProyectoId))
-                throw new AbrilException("No tienes permiso para rechazar pedidos de este proyecto.", 403);
-            if (pedido.Estado != "PENDIENTE_GERENTE")
-                throw new AbrilException($"Solo se puede rechazar un pedido ya visado (PENDIENTE_GERENTE) — está en {pedido.Estado}.", 400);
-
-            pedido.Estado = "RECHAZADO";
-            pedido.MotivoRechazo = dto.MotivoRechazo;
-            pedido.AprobadoPorUsuarioSistemaId = aprobadorId;
-            pedido.AprobadoEn = DateTimeOffset.UtcNow;
-            await ctx.SaveChangesAsync();
-
-            var detalle = await BuildDetail(ctx, id);
-            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
-                $"Tu pedido {detalle.Codigo} fue rechazado",
-                $"Tu pedido <strong>{detalle.Codigo}</strong> fue rechazado por <strong>{detalle.AprobadoPorNombre}</strong>.<br/>Motivo: {dto.MotivoRechazo}");
+                // Recién acá se avisa a quien despacha (Logística/Almacenero) — no antes, porque
+                // hasta este punto el pedido todavía podía ser rechazado en cualquiera de los dos
+                // niveles.
+                var entregadores = await GetEmailsConPermiso(ctx, "PEDIDO_ENTREGAR", pedido.ProyectoId);
+                await NotificarEvento(
+                    entregadores.ToArray(),
+                    $"Pedido {detalle.Codigo} aprobado, pendiente de despacho",
+                    $"El pedido <strong>{detalle.Codigo}</strong> ({detalle.Items.Count} producto(s)) de " +
+                    $"<strong>{detalle.SolicitanteNombre}</strong> en <strong>{detalle.ProyectoNombre}</strong> ya fue " +
+                    $"aprobado por {detalle.AprobadoPorNombre} — está listo para atender y despachar.");
+            }
 
             return detalle;
         }
@@ -351,19 +406,24 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             if (pedido.Estado != "APROBADO")
                 throw new AbrilException($"Solo se puede entregar un pedido APROBADO (está en {pedido.Estado}).", 400);
 
+            // Solo se despachan los ítems que sobrevivieron a las dos etapas de aprobación — los
+            // RECHAZADO (por el Residente o por Gerencia) no consumen stock. La cantidad a entregar
+            // es la aprobada, no la solicitada (puede haber sido reducida en Visar o Aprobar).
+            var itemsAEntregar = pedido.Items.Where(i => i.Estado == "APROBADO").ToList();
+
             var faltantes = new List<string>();
-            foreach (var item in pedido.Items)
+            foreach (var item in itemsAEntregar)
             {
                 var stock = await ctx.Stock.FirstOrDefaultAsync(s =>
                     s.AlmacenId == pedido.AlmacenId && s.ProductoId == item.ProductoId && s.Talla == item.Talla && s.Color == item.Color);
                 var disponible = stock?.CantidadActual ?? 0;
-                if (disponible < item.CantidadSolicitada)
-                    faltantes.Add($"{item.Producto!.Nombre} (pide {item.CantidadSolicitada}, hay {disponible})");
+                if (disponible < item.CantidadAprobada!.Value)
+                    faltantes.Add($"{item.Producto!.Nombre} (pide {item.CantidadAprobada}, hay {disponible})");
             }
             if (faltantes.Count > 0)
                 throw new AbrilException("Stock insuficiente para entregar: " + string.Join("; ", faltantes), 400);
 
-            foreach (var item in pedido.Items)
+            foreach (var item in itemsAEntregar)
             {
                 await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
                 {
@@ -372,12 +432,13 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     Talla = item.Talla,
                     Color = item.Color,
                     TipoMovimiento = "SALIDA",
-                    Cantidad = item.CantidadSolicitada,
+                    Cantidad = item.CantidadAprobada!.Value,
                     ReferenciaTipo = "PEDIDO",
                     ReferenciaId = pedido.Id,
+                    PartidaId = item.PartidaId,
                 }, entregadorId);
 
-                item.CantidadEntregada = item.CantidadSolicitada;
+                item.CantidadEntregada = item.CantidadAprobada;
             }
 
             pedido.Estado = "ENTREGADO";
@@ -416,7 +477,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
             var query = ctx.PedidoItem
                 .Include(i => i.Pedido!).ThenInclude(p => p.Proyecto)
                 .Include(i => i.Producto)
-                .Where(i => i.Pedido!.Estado == "APROBADO" && i.CantidadEnCompra < i.CantidadSolicitada)
+                .Where(i => i.Pedido!.Estado == "APROBADO" && i.Estado == "APROBADO" && i.CantidadEnCompra < i.CantidadAprobada!.Value)
                 .AsQueryable();
 
             if (proyectosPermitidos != null)
@@ -434,9 +495,9 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     ProductoNombre = i.Producto!.Nombre,
                     Talla = i.Talla,
                     Color = i.Color,
-                    CantidadSolicitada = i.CantidadSolicitada,
+                    CantidadSolicitada = i.CantidadAprobada!.Value,
                     CantidadEnCompra = i.CantidadEnCompra,
-                    CantidadPendienteDeCompra = i.CantidadSolicitada - i.CantidadEnCompra,
+                    CantidadPendienteDeCompra = i.CantidadAprobada.Value - i.CantidadEnCompra,
                     PedidoCreadoEn = i.Pedido.CreadoEn,
                 })
                 .ToListAsync();
@@ -474,16 +535,198 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                 .ToListAsync();
         }
 
+        public async Task<List<PedidoItemHistorialDto>> GetHistorial(long pedidoId)
+        {
+            using var ctx = _factory.CreateDbContext();
+            if (!await ctx.Pedido.AnyAsync(p => p.Id == pedidoId))
+                throw new AbrilException("Pedido no encontrado.", 404);
+
+            return await ctx.PedidoItemHistorial
+                .Include(h => h.PedidoItem!).ThenInclude(i => i!.Producto)
+                .Include(h => h.UsuarioSistema!).ThenInclude(u => u!.Persona)
+                .Where(h => h.PedidoItem!.PedidoId == pedidoId)
+                .OrderBy(h => h.CreadoEn)
+                .Select(h => new PedidoItemHistorialDto
+                {
+                    Id = h.Id,
+                    PedidoItemId = h.PedidoItemId,
+                    ProductoNombre = h.PedidoItem!.Producto!.Nombre,
+                    Etapa = h.Etapa,
+                    UsuarioNombre = h.UsuarioSistema!.Persona!.Apellidos + " " + h.UsuarioSistema.Persona.Nombres,
+                    EstadoResultante = h.EstadoResultante,
+                    CantidadSolicitada = h.CantidadSolicitada,
+                    CantidadAprobada = h.CantidadAprobada,
+                    MotivoRechazo = h.MotivoRechazo,
+                    CreadoEn = h.CreadoEn,
+                })
+                .ToListAsync();
+        }
+
+        public async Task<List<ContratoDto>> ListContratos(int proyectoId)
+        {
+            using var ctx = _factory.CreateDbContext();
+            return await ctx.Contrato
+                .Where(c => c.ProyectoId == proyectoId && c.Activo)
+                .OrderByDescending(c => c.VigenteDesde)
+                .Select(c => new ContratoDto
+                {
+                    Id = c.Id,
+                    ProyectoId = c.ProyectoId,
+                    Codigo = c.Codigo,
+                    Descripcion = c.Descripcion,
+                    VigenteDesde = c.VigenteDesde,
+                    VigenteHasta = c.VigenteHasta,
+                    Activo = c.Activo,
+                })
+                .ToListAsync();
+        }
+
+        public async Task<ContratoDto> CrearContrato(ContratoCreateDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Codigo))
+                throw new AbrilException("El código del contrato es obligatorio.", 400);
+
+            using var ctx = _factory.CreateDbContext();
+            if (!await ctx.Proyecto.AnyAsync(p => p.Id == dto.ProyectoId))
+                throw new AbrilException("Proyecto no encontrado.", 404);
+            if (await ctx.Contrato.AnyAsync(c => c.Codigo == dto.Codigo))
+                throw new AbrilException($"Ya existe un contrato con código \"{dto.Codigo}\".", 400);
+
+            var contrato = new Contrato
+            {
+                ProyectoId = dto.ProyectoId,
+                Codigo = dto.Codigo,
+                Descripcion = dto.Descripcion,
+                VigenteDesde = dto.VigenteDesde,
+                VigenteHasta = dto.VigenteHasta,
+                Activo = true,
+            };
+            ctx.Contrato.Add(contrato);
+            await ctx.SaveChangesAsync();
+
+            return new ContratoDto
+            {
+                Id = contrato.Id,
+                ProyectoId = contrato.ProyectoId,
+                Codigo = contrato.Codigo,
+                Descripcion = contrato.Descripcion,
+                VigenteDesde = contrato.VigenteDesde,
+                VigenteHasta = contrato.VigenteHasta,
+                Activo = contrato.Activo,
+            };
+        }
+
+        public async Task<List<PartidaDto>> ListPartidas(int proyectoId)
+        {
+            using var ctx = _factory.CreateDbContext();
+            return await ctx.Partida
+                .Include(p => p.Moneda)
+                .Where(p => p.ProyectoId == proyectoId && p.Activo)
+                .OrderBy(p => p.Codigo)
+                .Select(p => new PartidaDto
+                {
+                    Id = p.Id,
+                    ProyectoId = p.ProyectoId,
+                    Codigo = p.Codigo,
+                    Nombre = p.Nombre,
+                    Activo = p.Activo,
+                    MonedaId = p.MonedaId,
+                    MonedaCodigo = p.Moneda != null ? p.Moneda.Codigo : null,
+                    MontoPresupuestado = p.MontoPresupuestado,
+                })
+                .ToListAsync();
+        }
+
+        public async Task<PartidaDto> CrearPartida(PartidaCreateDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Codigo) || string.IsNullOrWhiteSpace(dto.Nombre))
+                throw new AbrilException("Código y nombre de la partida son obligatorios.", 400);
+            if (dto.MontoPresupuestado is < 0)
+                throw new AbrilException("El monto presupuestado no puede ser negativo.", 400);
+
+            using var ctx = _factory.CreateDbContext();
+            if (!await ctx.Proyecto.AnyAsync(p => p.Id == dto.ProyectoId))
+                throw new AbrilException("Proyecto no encontrado.", 404);
+            if (await ctx.Partida.AnyAsync(p => p.ProyectoId == dto.ProyectoId && p.Codigo == dto.Codigo))
+                throw new AbrilException($"Ya existe una partida con código \"{dto.Codigo}\" en este proyecto.", 400);
+            if (dto.MonedaId.HasValue && !await ctx.Moneda.AnyAsync(m => m.Id == dto.MonedaId))
+                throw new AbrilException("Moneda no encontrada.", 404);
+
+            var partida = new Partida
+            {
+                ProyectoId = dto.ProyectoId,
+                Codigo = dto.Codigo,
+                Nombre = dto.Nombre,
+                Activo = true,
+                MonedaId = dto.MonedaId,
+                MontoPresupuestado = dto.MontoPresupuestado,
+            };
+            ctx.Partida.Add(partida);
+            await ctx.SaveChangesAsync();
+
+            var moneda = dto.MonedaId.HasValue ? await ctx.Moneda.FindAsync(dto.MonedaId.Value) : null;
+            return new PartidaDto
+            {
+                Id = partida.Id,
+                ProyectoId = partida.ProyectoId,
+                Codigo = partida.Codigo,
+                Nombre = partida.Nombre,
+                Activo = partida.Activo,
+                MonedaId = partida.MonedaId,
+                MonedaCodigo = moneda?.Codigo,
+                MontoPresupuestado = partida.MontoPresupuestado,
+            };
+        }
+
+        public async Task<List<MonedaDto>> ListMonedas()
+        {
+            using var ctx = _factory.CreateDbContext();
+            return await ctx.Moneda
+                .OrderBy(m => m.Codigo)
+                .Select(m => new MonedaDto { Id = m.Id, Codigo = m.Codigo, Nombre = m.Nombre })
+                .ToListAsync();
+        }
+
+        public async Task<ConsumoPartidaDto> GetConsumoPartida(int partidaId)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var partida = await ctx.Partida.Include(p => p.Moneda).FirstOrDefaultAsync(p => p.Id == partidaId)
+                ?? throw new AbrilException("Partida no encontrada.", 404);
+
+            // Consumido = valorizado de todas las SALIDAs de Kardex imputadas a esta partida — no
+            // solo las que vinieron de un Pedido, para que una salida futura de otro módulo (EPP,
+            // Herramientas, ajuste manual) que se impute acá también cuente.
+            var consumido = await ctx.Movimiento
+                .Where(m => m.PartidaId == partidaId && m.TipoMovimiento == "SALIDA")
+                .SumAsync(m => (decimal?)(m.Cantidad * (m.CostoUnitario ?? 0))) ?? 0;
+
+            return new ConsumoPartidaDto
+            {
+                PartidaId = partida.Id,
+                PartidaCodigo = partida.Codigo,
+                PartidaNombre = partida.Nombre,
+                MonedaCodigo = partida.Moneda?.Codigo,
+                MontoPresupuestado = partida.MontoPresupuestado,
+                Consumido = consumido,
+                Saldo = partida.MontoPresupuestado.HasValue ? partida.MontoPresupuestado - consumido : null,
+                PorcentajeConsumido = partida.MontoPresupuestado is > 0
+                    ? Math.Round(consumido / partida.MontoPresupuestado.Value * 100, 1)
+                    : null,
+            };
+        }
+
         private static async Task<PedidoDetailDto> BuildDetail(AppDbContext ctx, long id)
         {
             var pedido = await ctx.Pedido
                 .Include(p => p.Proyecto)
                 .Include(p => p.Almacen)
+                .Include(p => p.Contrato)
                 .Include(p => p.Solicitante!).ThenInclude(u => u!.Persona)
                 .Include(p => p.VisadoPor!).ThenInclude(u => u!.Persona)
                 .Include(p => p.AprobadoPor!).ThenInclude(u => u!.Persona)
                 .Include(p => p.EntregadoPor!).ThenInclude(u => u!.Persona)
                 .Include(p => p.Items).ThenInclude(i => i.Producto)
+                .Include(p => p.Items).ThenInclude(i => i.Partida)
                 .FirstOrDefaultAsync(p => p.Id == id)
                 ?? throw new AbrilException("Pedido no encontrado.", 404);
 
@@ -493,6 +736,8 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                 Codigo = pedido.Codigo,
                 ProyectoNombre = pedido.Proyecto!.Nombre,
                 AlmacenNombre = pedido.Almacen!.Nombre,
+                ContratoId = pedido.ContratoId,
+                ContratoCodigo = pedido.Contrato?.Codigo,
                 SolicitanteUsuarioSistemaId = pedido.SolicitanteUsuarioSistemaId,
                 SolicitanteNombre = $"{pedido.Solicitante!.Persona!.Apellidos} {pedido.Solicitante.Persona.Nombres}",
                 Estado = pedido.Estado,
@@ -518,6 +763,11 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     Color = i.Color,
                     Observacion = i.Observacion,
                     CantidadSolicitada = i.CantidadSolicitada,
+                    CantidadAprobada = i.CantidadAprobada,
+                    Estado = i.Estado,
+                    MotivoRechazo = i.MotivoRechazo,
+                    PartidaId = i.PartidaId,
+                    PartidaNombre = i.Partida?.Nombre,
                     CantidadEntregada = i.CantidadEntregada,
                     CantidadEnCompra = i.CantidadEnCompra,
                     CantidadRecibidaAlmacen = i.CantidadRecibidaAlmacen,

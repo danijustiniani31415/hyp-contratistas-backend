@@ -111,41 +111,21 @@ namespace Abril_Backend.Features.PedidosModule.Presentation
         }
 
         [HttpPost("{id:long}/visar")]
-        public async Task<IActionResult> Visar(long id)
+        public async Task<IActionResult> Visar(long id, [FromBody] PedidoDecisionDto dto)
         {
             if (!User.HasLbPermiso("PEDIDO_VISAR"))
                 return StatusCode(403, new { message = "No tienes permiso para visar pedidos." });
-            try { return Ok(await _service.Visar(id, CurrentUsuarioSistemaId, User.GetProyectosPermitidos("PEDIDO_VISAR"))); }
-            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
-            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
-        }
-
-        [HttpPost("{id:long}/rechazar-visado")]
-        public async Task<IActionResult> RechazarVisado(long id, [FromBody] RechazarPedidoDto dto)
-        {
-            if (!User.HasLbPermiso("PEDIDO_VISAR"))
-                return StatusCode(403, new { message = "No tienes permiso para rechazar pedidos en visado." });
-            try { return Ok(await _service.RechazarVisado(id, CurrentUsuarioSistemaId, dto, User.GetProyectosPermitidos("PEDIDO_VISAR"))); }
+            try { return Ok(await _service.Visar(id, CurrentUsuarioSistemaId, dto, User.GetProyectosPermitidos("PEDIDO_VISAR"))); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
         [HttpPost("{id:long}/aprobar")]
-        public async Task<IActionResult> Aprobar(long id)
+        public async Task<IActionResult> Aprobar(long id, [FromBody] PedidoDecisionDto dto)
         {
             if (!User.HasLbPermiso("PEDIDO_APROBAR"))
                 return StatusCode(403, new { message = "No tienes permiso para aprobar pedidos." });
-            try { return Ok(await _service.Aprobar(id, CurrentUsuarioSistemaId, User.GetProyectosPermitidos("PEDIDO_APROBAR"))); }
-            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
-            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
-        }
-
-        [HttpPost("{id:long}/rechazar")]
-        public async Task<IActionResult> Rechazar(long id, [FromBody] RechazarPedidoDto dto)
-        {
-            if (!User.HasLbPermiso("PEDIDO_APROBAR"))
-                return StatusCode(403, new { message = "No tienes permiso para rechazar pedidos." });
-            try { return Ok(await _service.Rechazar(id, CurrentUsuarioSistemaId, dto, User.GetProyectosPermitidos("PEDIDO_APROBAR"))); }
+            try { return Ok(await _service.Aprobar(id, CurrentUsuarioSistemaId, dto, User.GetProyectosPermitidos("PEDIDO_APROBAR"))); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -156,6 +136,66 @@ namespace Abril_Backend.Features.PedidosModule.Presentation
             if (!User.HasLbPermiso("PEDIDO_ENTREGAR"))
                 return StatusCode(403, new { message = "No tienes permiso para entregar pedidos." });
             try { return Ok(await _service.Entregar(id, CurrentUsuarioSistemaId, User.GetProyectosPermitidos("PEDIDO_ENTREGAR"))); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("{id:long}/historial")]
+        public async Task<IActionResult> GetHistorial(long id)
+        {
+            try { return Ok(await _service.GetHistorial(id)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("contratos")]
+        public async Task<IActionResult> ListContratos([FromQuery] int proyectoId)
+        {
+            try { return Ok(await _service.ListContratos(proyectoId)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPost("contratos")]
+        public async Task<IActionResult> CrearContrato([FromBody] ContratoCreateDto dto)
+        {
+            if (!User.HasLbPermiso("PEDIDO_CREAR"))
+                return StatusCode(403, new { message = "No tienes permiso para crear contratos." });
+            try { return Ok(await _service.CrearContrato(dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("partidas")]
+        public async Task<IActionResult> ListPartidas([FromQuery] int proyectoId)
+        {
+            try { return Ok(await _service.ListPartidas(proyectoId)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPost("partidas")]
+        public async Task<IActionResult> CrearPartida([FromBody] PartidaCreateDto dto)
+        {
+            if (!User.HasLbPermiso("PEDIDO_CREAR"))
+                return StatusCode(403, new { message = "No tienes permiso para crear partidas." });
+            try { return Ok(await _service.CrearPartida(dto)); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("monedas")]
+        public async Task<IActionResult> ListMonedas()
+        {
+            try { return Ok(await _service.ListMonedas()); }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("partidas/{id:int}/consumo")]
+        public async Task<IActionResult> GetConsumoPartida(int id)
+        {
+            try { return Ok(await _service.GetConsumoPartida(id)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }

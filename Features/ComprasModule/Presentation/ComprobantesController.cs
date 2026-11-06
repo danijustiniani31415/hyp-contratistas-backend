@@ -44,6 +44,21 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        /// <summary>Copia del PDF/foto original, para verla junto al comprobante registrado.</summary>
+        [HttpGet("archivos/{id:long}")]
+        public async Task<IActionResult> Archivo(long id)
+        {
+            if (!User.HasLbPermiso("COMPRA_CREAR") && !User.HasLbPermiso("COMPRA_RECIBIR"))
+                return StatusCode(403, new { message = "No tienes permiso para ver comprobantes de compra." });
+            try
+            {
+                var a = await _service.GetArchivo(id);
+                return File(a.Contenido, a.Mime);
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
         /// <summary>Guarda el comprobante ya confirmado y aplica los ingresos al kardex.</summary>
         [HttpPost]
         public async Task<IActionResult> Guardar([FromBody] ComprobanteGuardarDto dto)

@@ -42,6 +42,9 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         /// <summary>PEDIDO, COMPRA, ENTREGA_EPP, PRESTAMO_HERRAMIENTA — null para ajustes manuales.</summary>
         public string? ReferenciaTipo { get; set; }
         public long? ReferenciaId { get; set; }
+        /// <summary>Partida presupuestal a la que se imputa este movimiento — null si no aplica
+        /// (ajuste manual, entrega EPP, etc.).</summary>
+        public int? PartidaId { get; set; }
     }
 
     /// <summary>Producto bajo su stock mínimo — sugerencia de reposición para el panel de
