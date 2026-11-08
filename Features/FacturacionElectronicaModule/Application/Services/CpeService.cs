@@ -204,23 +204,22 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
             if (errores.Count > 0)
                 throw new AbrilException("No se puede emitir: " + string.Join(" ", errores.Select(e => e.Mensaje)), 400);
 
-            // Correlativo: bloqueo de fila + incremento + asignación en una sola transacción. Un reintento reenvía con el mismo número.
-            if (!cpe.Numero.HasValue)
+            // Correlativo: se asigna una sola vez; un reintento reenvía con el mismo número.
+            if (!cpe.Numero.HasValue) await AsignarNumero(ctx, cpe);
+
+            // Protección contra otro canal usando la misma serie: si SUNAT ya tiene este número, se salta al siguiente libre.
+            if (_s.VerificarExistenciaAntesDeEmitir && cpe.Estado == "BORRADOR")
             {
-                // EF está configurado con reintentos automáticos: una transacción manual debe ir dentro de la estrategia de ejecución.
-                var strategy = ctx.Database.CreateExecutionStrategy();
-                await strategy.ExecuteAsync(async () =>
+                for (var salto = 0; ; salto++)
                 {
-                    await using var tx = await ctx.Database.BeginTransactionAsync();
-                    var filas = await ctx.CpeSerie
-                        .FromSql($"SELECT * FROM lb_cpe_serie WHERE tipo_documento = {cpe.TipoDocumento} AND serie = {cpe.Serie} AND activa FOR UPDATE")
-                        .ToListAsync();
-                    var serie = filas.FirstOrDefault() ?? throw new AbrilException($"La serie {cpe.Serie} no existe o está inactiva.", 400);
-                    serie.UltimoNumero += 1;
-                    cpe.Numero = serie.UltimoNumero;
-                    await ctx.SaveChangesAsync();
-                    await tx.CommitAsync();
-                });
+                    var existe = await ExisteEnSunat(cpe);
+                    if (existe == null || !existe.Existe) break;
+                    Log(ctx, cpe.Id, "NUMERO_OCUPADO", false, existe.Codigo, $"{cpe.Serie}-{cpe.Numero} ya existe en SUNAT ({existe.Mensaje}); se usa el siguiente.");
+                    if (salto >= 9)
+                        throw new AbrilException($"Los siguientes 10 números de la serie {cpe.Serie} ya existen en SUNAT: otro sistema o el portal está usando la misma serie. Crea una serie propia para el ERP en \"Series y correlativos\" (por ejemplo F002) o ajusta el último número.", 409);
+                    cpe.Numero = null;
+                    await AsignarNumero(ctx, cpe);
+                }
             }
 
             cpe.HoraEmision = AhoraPeru();
@@ -260,6 +259,59 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
                 await ctx.SaveChangesAsync();
                 throw new AbrilException("No se pudo completar el envío a SUNAT: " + ex.Message + " El comprobante conserva su número; reintenta en unos minutos.", 502);
             }
+            await ctx.SaveChangesAsync();
+            return await BuildDetail(ctx, id);
+        }
+
+        /// <summary>Toma el siguiente correlativo de la serie con bloqueo de fila, dentro de la estrategia de ejecución de EF (hay reintentos automáticos).</summary>
+        private static async Task AsignarNumero(AppDbContext ctx, Cpe cpe)
+        {
+            var strategy = ctx.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var tx = await ctx.Database.BeginTransactionAsync();
+                var filas = await ctx.CpeSerie
+                    .FromSql($"SELECT * FROM lb_cpe_serie WHERE tipo_documento = {cpe.TipoDocumento} AND serie = {cpe.Serie} AND activa FOR UPDATE")
+                    .ToListAsync();
+                var serie = filas.FirstOrDefault() ?? throw new AbrilException($"La serie {cpe.Serie} no existe o está inactiva.", 400);
+                serie.UltimoNumero += 1;
+                cpe.Numero = serie.UltimoNumero;
+                await ctx.SaveChangesAsync();
+                await tx.CommitAsync();
+            });
+        }
+
+        /// <summary>Pregunta a SUNAT si el número ya existe. Devuelve null si no hay respuesta útil (timeout, error, servicio ausente): nunca bloquea.</summary>
+        private async Task<CpeExistenciaResultado?> ExisteEnSunat(Cpe cpe)
+        {
+            try
+            {
+                var tarea = _sunat.ConsultarExistenciaAsync(cpe.TipoDocumento, cpe.Serie, cpe.Numero!.Value);
+                if (await Task.WhenAny(tarea, Task.Delay(TimeSpan.FromSeconds(8))) != tarea)
+                {
+                    _ = tarea.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                    return null;
+                }
+                return await tarea;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public async Task<CpeDetailDto> PedirNumeroNuevo(long id)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var cpe = await ctx.Cpe.FirstOrDefaultAsync(c => c.Id == id) ?? throw new AbrilException("Comprobante no encontrado.", 404);
+            if (cpe.Estado != "RECHAZADO" || !cpe.Numero.HasValue)
+                throw new AbrilException("Solo un comprobante rechazado puede pedir un número nuevo.", 400);
+            Log(ctx, cpe.Id, "RENUMERAR", true, null, $"Se liberó el número {cpe.Serie}-{cpe.Numero} (rechazado: {cpe.SunatCodigo} {cpe.SunatDescripcion}).");
+            // El número rechazado queda como hueco en la serie; SUNAT no lo registró.
+            cpe.Numero = null;
+            cpe.Estado = "BORRADOR";
+            cpe.XmlFirmado = null; cpe.XmlHashFirma = null; cpe.XmlNombreArchivo = null; cpe.CdrXml = null;
+            cpe.SunatCodigo = null; cpe.SunatDescripcion = null; cpe.EnviadoEn = null; cpe.RespondidoEn = null;
             await ctx.SaveChangesAsync();
             return await BuildDetail(ctx, id);
         }

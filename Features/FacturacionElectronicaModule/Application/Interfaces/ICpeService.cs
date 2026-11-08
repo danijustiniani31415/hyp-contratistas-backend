@@ -17,6 +17,9 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Interf
         Task<CpeDetailDto> DarDeBaja(long id, CpeBajaDto dto, long usuarioId);
         Task<CpeDetailDto> ConsultarBaja(long id);
 
+        /// <summary>Libera el número de un comprobante rechazado para que, al reenviarlo, tome el siguiente correlativo libre.</summary>
+        Task<CpeDetailDto> PedirNumeroNuevo(long id);
+
         Task<string> ObtenerXml(long id);
         Task<string> ObtenerCdr(long id);
 

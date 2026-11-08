@@ -38,8 +38,19 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
         public SunatFaultException(string codigo, string mensaje) : base(mensaje) { Codigo = codigo; }
     }
 
+    /// <summary>Resultado de preguntarle a SUNAT por un comprobante concreto.</summary>
+    public class CpeExistenciaResultado
+    {
+        /// <summary>true si SUNAT ya tiene registrado ese número (aceptado, rechazado o dado de baja).</summary>
+        public bool Existe { get; set; }
+        public string? Codigo { get; set; }
+        public string? Mensaje { get; set; }
+    }
+
     public interface ISunatCpeClient
     {
+        /// <summary>Consulta si SUNAT ya tiene un comprobante con ese tipo, serie y número (getStatusCdr).</summary>
+        Task<CpeExistenciaResultado> ConsultarExistenciaAsync(string tipo, string serie, long numero);
         /// <summary>Envía una factura o nota (sendBill). SUNAT responde el CDR en la misma llamada.</summary>
         Task<CpeEnvioResultado> EnviarComprobanteAsync(string xmlFirmado, string nombreSinExtension);
         /// <summary>Envía una comunicación de baja (sendSummary). Devuelve un ticket que se consulta después.</summary>
@@ -114,6 +125,28 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
             };
         }
 
+        public async Task<CpeExistenciaResultado> ConsultarExistenciaAsync(string tipo, string serie, long numero)
+        {
+            var cuerpo = new XElement(Ser + "getStatusCdr",
+                new XElement("rucComprobante", _s.RucEmisor),
+                new XElement("tipoComprobante", tipo),
+                new XElement("serieComprobante", serie),
+                new XElement("numeroComprobante", numero));
+            try
+            {
+                var doc = await LlamarAsync("getStatusCdr", cuerpo, _s.UrlConsultaActiva);
+                var codigo = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "statusCode")?.Value;
+                var mensaje = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "statusMessage")?.Value;
+                // 0001 aceptado, 0002 rechazado, 0003 dado de baja: en los tres casos el número ya está usado en SUNAT.
+                return new CpeExistenciaResultado { Existe = codigo is "0001" or "0002" or "0003", Codigo = codigo, Mensaje = mensaje };
+            }
+            catch (SunatFaultException ex)
+            {
+                // Un fault de "no existe" significa número libre; cualquier otro se informa y quien llama decide.
+                return new CpeExistenciaResultado { Existe = false, Codigo = ex.Codigo, Mensaje = ex.Message };
+            }
+        }
+
         // ── SOAP ────────────────────────────────────────────────────────────────
 
         private static XElement Cuerpo(string operacion, string nombreSinExtension, string xml)
@@ -131,7 +164,7 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
                 new XElement("contentFile", Convert.ToBase64String(ms.ToArray())));
         }
 
-        private async Task<XDocument> LlamarAsync(string operacion, XElement cuerpo)
+        private async Task<XDocument> LlamarAsync(string operacion, XElement cuerpo, string? url = null)
         {
             // Guardia de seguridad: Producción solo si el ambiente lo declara Y el candado está abierto.
             if (_s.EsProduccion && !_s.PermitirProduccion)
@@ -148,7 +181,7 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
                             new XElement(Wsse + "Password", _s.ClaveWs)))),
                 new XElement(Soap + "Body", cuerpo)));
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, _s.UrlActiva)
+            using var req = new HttpRequestMessage(HttpMethod.Post, url ?? _s.UrlActiva)
             {
                 Content = new StringContent(sobre.ToString(SaveOptions.DisableFormatting), Encoding.UTF8, "text/xml"),
             };

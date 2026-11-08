@@ -64,6 +64,10 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Presentation
         public async Task<IActionResult> Emitir(long id)
             => Denegar("FACTURACION_EMITIR") ?? await Ejecutar(() => _service.Emitir(id, CurrentUsuarioSistemaId));
 
+        [HttpPost("{id:long}/numero-nuevo")]
+        public async Task<IActionResult> NumeroNuevo(long id)
+            => Denegar("FACTURACION_EMITIR") ?? await Ejecutar(() => _service.PedirNumeroNuevo(id));
+
         [HttpPost("{id:long}/baja")]
         public async Task<IActionResult> Baja(long id, [FromBody] CpeBajaDto dto)
             => Denegar("FACTURACION_EMITIR") ?? await Ejecutar(() => _service.DarDeBaja(id, dto, CurrentUsuarioSistemaId));

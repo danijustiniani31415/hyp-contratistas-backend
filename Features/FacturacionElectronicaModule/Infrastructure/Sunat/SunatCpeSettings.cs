@@ -44,6 +44,17 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
         public string UrlBeta { get; set; } = "https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService";
         public string UrlProduccion { get; set; } = "https://e-factura.sunat.gob.pe/ol-ti-itcpfegem/billService";
 
+        /// <summary>Servicio de consulta de comprobantes (getStatusCdr): dice si un número ya existe en SUNAT. [VERIFICAR URL vigente]</summary>
+        public string UrlConsultaBeta { get; set; } = "https://e-beta.sunat.gob.pe/ol-it-wsconscpegem-beta/billConsultService";
+        public string UrlConsultaProduccion { get; set; } = "https://e-factura.sunat.gob.pe/ol-it-wsconscpegem/billConsultService";
+        public string UrlConsultaActiva => EsProduccion ? UrlConsultaProduccion : UrlConsultaBeta;
+
+        /// <summary>
+        /// Antes de enviar un comprobante nuevo, pregunta a SUNAT si ese número ya existe (otro sistema o el portal usando la misma serie)
+        /// y salta al siguiente libre. Si SUNAT no responde o la consulta falla, NO bloquea la emisión. El Beta no tiene este servicio.
+        /// </summary>
+        public bool VerificarExistenciaAntesDeEmitir { get; set; } = true;
+
         public bool EsProduccion => Ambiente == "Produccion";
         public string UrlActiva => EsProduccion ? UrlProduccion : UrlBeta;
 

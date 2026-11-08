@@ -180,3 +180,11 @@ Notas técnicas: EF tiene reintentos automáticos, así que la asignación de co
 4. Consultar `getStatusCdr` antes de reenviar tras un corte de red (hoy el envío es seguro pero puede duplicar el intento).
 5. Anticipos, retención de IGV, descuentos globales y detracciones con catálogo de bienes/servicios.
 6. Aplicar `Migrations_Manual/2026-11-09_lb_facturacion_electronica.sql` en producción.
+
+### Protección contra otro canal en la misma serie (2026-11-08)
+- Antes de enviar un comprobante nuevo, el sistema consulta a SUNAT (`getStatusCdr`) si ese número ya existe y **salta al siguiente libre**
+  (hasta 10 seguidos; luego frena y pide usar una serie propia). Si la consulta falla, no responde en 8 s o el servicio no existe, **no bloquea**.
+- **No se pudo probar contra el Beta**: el servicio de consulta de comprobantes no existe allí (responde 404). La lógica de salto se probó con un cliente simulado;
+  la respuesta real de SUNAT se verifica en la primera emisión en producción (códigos de existencia asumidos: 0001, 0002, 0003 [VERIFICAR]). Se apaga con `SunatCpe:VerificarExistenciaAntesDeEmitir = false`.
+- Un comprobante **rechazado** puede "Pedir número nuevo": libera el número fallido y toma el siguiente en el reenvío.
+- Recomendación operativa: una serie por canal (ej. F001 portal, F002 ERP).
