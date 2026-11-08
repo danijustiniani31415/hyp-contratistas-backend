@@ -118,6 +118,11 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<GuiaTransportista> GuiaTransportista { get; set; }
         public DbSet<GuiaVehiculo> GuiaVehiculo { get; set; }
         public DbSet<GuiaConductor> GuiaConductor { get; set; }
+        // ── Las Bravas / HP Constructores: Facturación electrónica SUNAT ──
+        public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.CpeSerie> CpeSerie { get; set; }
+        public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.Cpe> Cpe { get; set; }
+        public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.CpeItem> CpeItem { get; set; }
+        public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.CpeEnvio> CpeEnvio { get; set; }
         // ── Las Bravas / HP Constructores: Planillas — motor de cálculo (Fase 3) ──
         public DbSet<ConceptoPlanilla> ConceptoPlanilla { get; set; }
         public DbSet<PlanillaPeriodo> PlanillaPeriodo { get; set; }

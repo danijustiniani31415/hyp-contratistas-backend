@@ -1,6 +1,6 @@
 # Diseño: facturación electrónica SUNAT (Factura, Boleta, Nota de crédito, Nota de débito)
 
-Estado: **propuesta para revisión** (2026-11-07). Nada de esto está implementado.
+Estado (2026-11-08): **backend implementado y probado contra el Beta de SUNAT** (rama `feat/facturacion-electronica`). Falta la pantalla del frontend. Ver sección 13.
 Lo marcado **[VERIFICAR]** es algo que hay que confirmar contra la documentación vigente de SUNAT o con
 el estado real de la empresa antes de programarlo; no se da por cierto.
 
@@ -157,3 +157,26 @@ Son estimaciones de orden de magnitud, no compromisos; la mayor incertidumbre es
 4. ¿Hay series y correlativos ya en uso (por ejemplo `F001`)? Hay que arrancar el correlativo donde está hoy.
 5. ¿Se necesitan boletas (cliente final) o solo facturas a empresas?
 6. ¿Dispones de usuario SOL secundario con permiso de envío de comprobantes y de las credenciales Beta?
+
+## 13. Lo aprendido al probar contra el Beta (2026-11-08)
+
+Se emitieron en el Beta de SUNAT y fueron **aceptadas**: factura al contado, factura en dólares al crédito con detracción, factura mixta
+(gravado + exonerado), factura de exportación, nota de crédito y nota de débito. La baja envía bien y devuelve ticket.
+
+Reglas reales de SUNAT que aparecieron (no estaban en el diseño):
+- **3128**: una factura con detracción lleva tipo de operación **1001**, no 0101. El sistema lo pone solo.
+- **2800**: en una exportación (0200) el cliente **no puede identificarse con RUC**; lleva documento del extranjero y país.
+- **3107**: en una exportación no va el bloque de IGV (1000), solo el 9995.
+- El Beta usa el RUC genérico 20000000001 con usuario MODDATOS; el XML lleva ese RUC como emisor. Funciona con el certificado real de H&P.
+- La consulta del ticket de baja (`getStatus`) en el Beta es lenta o se corta a veces. El servicio deja la baja en `BAJA_PENDIENTE` y se reintenta con "Consultar baja".
+- Se corrige lo escrito en la sección 4: un comprobante **RECHAZADO se reenvía con el mismo número** (SUNAT no lo registra), igual que las guías.
+
+Notas técnicas: EF tiene reintentos automáticos, así que la asignación de correlativo va dentro de `CreateExecutionStrategy()`.
+
+### Pendiente
+1. Pantalla en el frontend (lista, formulario, detalle, series, nota de crédito/débito, baja) y PDF con QR.
+2. Correlativo real de H&P (hay que fijar `ultimo_numero` de la serie en producción antes de emitir).
+3. Domicilio fiscal, ubigeo y cuenta de detracciones en `SunatCpe` (appsettings).
+4. Consultar `getStatusCdr` antes de reenviar tras un corte de red (hoy el envío es seguro pero puede duplicar el intento).
+5. Anticipos, retención de IGV, descuentos globales y detracciones con catálogo de bienes/servicios.
+6. Aplicar `Migrations_Manual/2026-11-09_lb_facturacion_electronica.sql` en producción.
