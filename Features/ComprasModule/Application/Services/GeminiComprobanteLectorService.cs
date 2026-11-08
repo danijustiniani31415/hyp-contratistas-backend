@@ -129,15 +129,27 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                 },
             };
 
-            using var req = new HttpRequestMessage(HttpMethod.Post,
-                $"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent")
+            // Google responde 503/500 cuando el modelo está sobrecargado; suele pasar en segundos, así que se reintenta.
+            HttpResponseMessage resp;
+            string texto;
+            var intento = 0;
+            while (true)
             {
-                Content = JsonContent.Create(cuerpo),
-            };
-            req.Headers.Add("x-goog-api-key", _apiKey);
-
-            using var resp = await _http.SendAsync(req);
-            var texto = await resp.Content.ReadAsStringAsync();
+                using var req = new HttpRequestMessage(HttpMethod.Post,
+                    $"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent")
+                {
+                    Content = JsonContent.Create(cuerpo),
+                };
+                req.Headers.Add("x-goog-api-key", _apiKey);
+                resp = await _http.SendAsync(req);
+                texto = await resp.Content.ReadAsStringAsync();
+                if (resp.IsSuccessStatusCode || intento >= 2
+                    || (int)resp.StatusCode is not (500 or 503)) break;
+                resp.Dispose();
+                intento++;
+                await Task.Delay(1500 * intento);
+            }
+            using var _ = resp;
             if (!resp.IsSuccessStatusCode)
                 throw new AbrilException(resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests
                     ? "El servicio de lectura con IA está saturado. Intenta de nuevo en un minuto."

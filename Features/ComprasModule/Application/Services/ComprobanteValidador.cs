@@ -23,9 +23,13 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             return digito == ruc[10] - '0';
         }
 
+        private static int DigitosDistintos(string a, string b) =>
+            a.Length != b.Length ? int.MaxValue : a.Zip(b).Count(p => p.First != p.Second);
+
         /// <summary>Errores de lectura probables (la IA confundió un número) → conviene reintentar con el modelo más preciso.</summary>
         public static bool NecesitaSegundaLectura(ComprobanteLeidoDto l, List<ComprobanteAdvertenciaDto> avisos) =>
             l.Confianza < 0.85
+            || avisos.Any(a => a.Nivel == "ERROR" && (a.Mensaje.StartsWith("El RUC del emisor") || a.Mensaje.StartsWith("La fecha de emisión") || a.Mensaje.StartsWith("El comprobante está a nombre")))
             || avisos.Any(a => a.Nivel == "ERROR" && (a.Mensaje.StartsWith("Los totales") || a.Mensaje.StartsWith("La suma de las líneas")));
 
         public static List<ComprobanteAdvertenciaDto> Validar(ComprobanteLeidoDto l)
@@ -39,11 +43,25 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             if (string.IsNullOrWhiteSpace(l.FechaEmision) || !DateOnly.TryParse(l.FechaEmision, out _))
                 Aviso("ERROR", "No se leyó la fecha de emisión.");
 
+            if (DateOnly.TryParse(l.FechaEmision, out var fecha))
+            {
+                var hoy = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5)); // hora de Perú
+                if (fecha > hoy)
+                    Aviso("ERROR", $"La fecha de emisión ({fecha:dd/MM/yyyy}) está en el futuro: probablemente se leyó mal el año o el día.");
+                else if (fecha < hoy.AddDays(-90))
+                    Aviso("AVISO", $"La fecha de emisión ({fecha:dd/MM/yyyy}) tiene más de 3 meses: confírmala en el documento (el crédito fiscal del IGV se pierde a los 12 meses).");
+            }
+
             if (l.Tipo is "FACTURA" or "BOLETA" or "NOTA_CREDITO" or "NOTA_DEBITO" && !RucValido(l.EmisorRuc))
                 Aviso("ERROR", $"El RUC del emisor ({l.EmisorRuc ?? "no leído"}) no es válido: revísalo en el documento.");
 
             if (l.Tipo == "BOLETA")
                 Aviso("AVISO", "Es una boleta: no da crédito fiscal (no se puede deducir el IGV). Si el proveedor puede, pídele factura.");
+            else if (l.Tipo is "FACTURA" or "NOTA_CREDITO" or "NOTA_DEBITO"
+                     && !string.IsNullOrWhiteSpace(l.ClienteRuc) && l.ClienteRuc != RucEmpresa
+                     && !RucValido(l.ClienteRuc) && DigitosDistintos(l.ClienteRuc, RucEmpresa) <= 2)
+                // Un RUC con dígito verificador inválido y casi igual al de la empresa es una lectura borrosa, no otro cliente.
+                Aviso("INFO", $"Se leyó el RUC del cliente como {l.ClienteRuc}, pero es casi el de H&P Constructores ({RucEmpresa}): se asume que es la empresa. Verifícalo en el documento.");
             else if (l.Tipo is "FACTURA" or "NOTA_CREDITO" or "NOTA_DEBITO"
                      && !string.IsNullOrWhiteSpace(l.ClienteRuc) && l.ClienteRuc != RucEmpresa)
                 Aviso("ERROR", $"El comprobante está a nombre del RUC {l.ClienteRuc}, no de H&P Constructores ({RucEmpresa}).");
