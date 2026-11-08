@@ -22,7 +22,7 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
             void E(string m) => av.Add(new CpeAvisoDto { Nivel = "ERROR", Mensaje = m });
             void A(string m) => av.Add(new CpeAvisoDto { Nivel = "AVISO", Mensaje = m });
 
-            if (c.TipoDocumento is not ("01" or "07" or "08")) E("Tipo de documento no soportado (solo factura, nota de crédito y nota de débito).");
+            if (c.TipoDocumento is not ("01" or "03" or "07" or "08")) E("Tipo de documento no soportado (factura, boleta, nota de crédito y nota de débito).");
             if (c.Moneda is not ("PEN" or "USD")) E("La moneda debe ser PEN o USD.");
             if (c.Moneda == "USD" && c.TipoCambio is not > 0) E("Indica el tipo de cambio para facturar en dólares.");
 
@@ -37,6 +37,9 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
             }
             if (c.ClienteTipoDoc == "6" && !ComprobanteValidador.RucValido(c.ClienteNumeroDoc)) E($"El RUC del cliente ({c.ClienteNumeroDoc}) no es válido.");
             if (c.ClienteTipoDoc == "1" && (c.ClienteNumeroDoc.Length != 8 || !c.ClienteNumeroDoc.All(char.IsDigit))) E("El DNI del cliente debe tener 8 dígitos.");
+            if (c.TipoDocumento == "03" && c.ClienteTipoDoc == "0" && c.Total > 700m)
+                E("Una boleta mayor a S/ 700 debe identificar al cliente con su DNI u otro documento [VERIFICAR monto vigente].");
+            if (c.TipoDocumento == "03" && c.Moneda == "USD") E("Las boletas se emiten en soles.");
             if (c.ClienteTipoDoc == "6" && c.ClienteNumeroDoc == ComprobanteValidador.RucEmpresa) E("No puedes emitir un comprobante a tu propio RUC.");
 
             // Fecha

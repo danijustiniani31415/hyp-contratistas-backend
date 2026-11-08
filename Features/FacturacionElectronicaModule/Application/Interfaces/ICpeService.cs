@@ -20,6 +20,13 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Interf
         /// <summary>Libera el número de un comprobante rechazado para que, al reenviarlo, tome el siguiente correlativo libre.</summary>
         Task<CpeDetailDto> PedirNumeroNuevo(long id);
 
+        // ── Boletas: se informan a SUNAT agrupadas en un resumen diario (RC) ──
+        Task<List<CpePendienteResumenDto>> PendientesResumen();
+        /// <summary>Arma, firma y envía el resumen de las boletas emitidas en esa fecha; devuelve el resumen con su estado.</summary>
+        Task<CpeResumenDto> EnviarResumen(DateOnly fecha, long usuarioId);
+        Task<CpeResumenDto> ConsultarResumen(long id);
+        Task<List<CpeResumenDto>> ListResumenes();
+
         Task<string> ObtenerXml(long id);
         Task<string> ObtenerCdr(long id);
 

@@ -80,6 +80,12 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
             cpe.ClienteRazon = (dto.ClienteRazon ?? "").Trim();
             cpe.ClienteDireccion = string.IsNullOrWhiteSpace(dto.ClienteDireccion) ? null : dto.ClienteDireccion.Trim();
             cpe.ClientePais = string.IsNullOrWhiteSpace(dto.ClientePais) ? null : dto.ClientePais.Trim().ToUpperInvariant();
+            // Boleta a cliente sin documento: SUNAT pide "-" como número y el sistema lo llama CLIENTES VARIOS.
+            if (cpe.TipoDocumento == "03" && cpe.ClienteTipoDoc == "0")
+            {
+                cpe.ClienteNumeroDoc = "-";
+                if (string.IsNullOrWhiteSpace(cpe.ClienteRazon)) cpe.ClienteRazon = "CLIENTES VARIOS";
+            }
             cpe.PreciosIncluyenIgv = dto.PreciosIncluyenIgv;
             cpe.FormaPago = dto.FormaPago == "CREDITO" ? "CREDITO" : "CONTADO";
             cpe.CuotasJson = cpe.FormaPago == "CREDITO" && dto.Cuotas is { Count: > 0 } ? JsonSerializer.Serialize(dto.Cuotas, Json) : null;
@@ -207,6 +213,9 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
             // Correlativo: se asigna una sola vez; un reintento reenvía con el mismo número.
             if (!cpe.Numero.HasValue) await AsignarNumero(ctx, cpe);
 
+            // Las boletas no se mandan una por una: quedan emitidas (con número y XML firmado) hasta el resumen diario.
+            if (cpe.TipoDocumento == "03") return await EmitirBoleta(ctx, cpe, usuarioId);
+
             // Protección contra otro canal usando la misma serie: si SUNAT ya tiene este número, se salta al siguiente libre.
             if (_s.VerificarExistenciaAntesDeEmitir && cpe.Estado == "BORRADOR")
             {
@@ -324,6 +333,19 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
             if (string.IsNullOrWhiteSpace(dto.Motivo)) throw new AbrilException("Indica el motivo de la baja.", 400);
             using var ctx = _factory.CreateDbContext();
             var cpe = await ctx.Cpe.FirstOrDefaultAsync(c => c.Id == id) ?? throw new AbrilException("Comprobante no encontrado.", 404);
+            if (cpe.TipoDocumento == "03")
+            {
+                if (cpe.Estado is "POR_ENVIAR" or "EN_RESUMEN")
+                    throw new AbrilException("Esta boleta todavía no fue aceptada por SUNAT: envía o espera su resumen diario y luego podrás anularla.", 400);
+                if (cpe.Estado is not ("ACEPTADO" or "ACEPTADO_OBS"))
+                    throw new AbrilException("Solo se puede anular una boleta aceptada por SUNAT.", 400);
+                // La anulación de una boleta viaja en el resumen diario de su fecha, con estado 3.
+                cpe.BajaMotivo = dto.Motivo.Trim();
+                cpe.Estado = "BAJA_SOLICITADA";
+                Log(ctx, cpe.Id, "BAJA", true, null, "Anulación solicitada: irá en el próximo resumen diario de su fecha.");
+                await ctx.SaveChangesAsync();
+                return await BuildDetail(ctx, id);
+            }
             if (cpe.Estado is not ("ACEPTADO" or "ACEPTADO_OBS"))
                 throw new AbrilException("Solo se puede dar de baja un comprobante aceptado por SUNAT.", 400);
 
@@ -358,6 +380,11 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
         {
             using var ctx = _factory.CreateDbContext();
             var cpe = await ctx.Cpe.FirstOrDefaultAsync(c => c.Id == id) ?? throw new AbrilException("Comprobante no encontrado.", 404);
+            if (cpe.TipoDocumento == "03" && cpe.ResumenId.HasValue)
+            {
+                await ConsultarResumen(cpe.ResumenId.Value);
+                return await BuildDetail(ctx, id);
+            }
             if (cpe.Estado != "BAJA_PENDIENTE" || string.IsNullOrEmpty(cpe.BajaTicket))
                 throw new AbrilException("Este comprobante no tiene una baja pendiente de consultar.", 400);
             return await ConsultarBajaInterno(ctx, cpe);
@@ -394,6 +421,166 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
             return await BuildDetail(ctx, cpe.Id);
         }
 
+        // ── Boletas y resumen diario ───────────────────────────────────────────
+
+        private async Task<CpeDetailDto> EmitirBoleta(AppDbContext ctx, Cpe cpe, long usuarioId)
+        {
+            cpe.HoraEmision = AhoraPeru();
+            cpe.EmitidoPorUsuarioSistemaId = usuarioId;
+            var nombre = $"{_s.RucEmisor}-03-{cpe.Serie}-{cpe.Numero}";
+            // Se firma y guarda el XML de la boleta como respaldo; a SUNAT viaja solo el resumen.
+            var (firmado, hash) = _signer.Firmar(_xml.Build(cpe));
+            cpe.XmlNombreArchivo = nombre;
+            cpe.XmlHashFirma = hash;
+            cpe.XmlFirmado = firmado;
+            cpe.Estado = "POR_ENVIAR";
+            Log(ctx, cpe.Id, "EMITIDA_BOLETA", true, null, "Boleta emitida; se informará a SUNAT en el resumen diario.");
+            await ctx.SaveChangesAsync();
+            return await BuildDetail(ctx, cpe.Id);
+        }
+
+        public async Task<List<CpePendienteResumenDto>> PendientesResumen()
+        {
+            using var ctx = _factory.CreateDbContext();
+            var filas = await ctx.Cpe.AsNoTracking()
+                .Where(c => c.TipoDocumento == "03" && (c.Estado == "POR_ENVIAR" || c.Estado == "BAJA_SOLICITADA"))
+                .Select(c => new { c.FechaEmision, c.Estado, c.Total })
+                .ToListAsync();
+            return filas.GroupBy(f => f.FechaEmision).OrderBy(g => g.Key)
+                .Select(g => new CpePendienteResumenDto
+                {
+                    Fecha = g.Key,
+                    Cantidad = g.Count(x => x.Estado == "POR_ENVIAR"),
+                    Bajas = g.Count(x => x.Estado == "BAJA_SOLICITADA"),
+                    Total = g.Where(x => x.Estado == "POR_ENVIAR").Sum(x => x.Total),
+                }).ToList();
+        }
+
+        public async Task<CpeResumenDto> EnviarResumen(DateOnly fecha, long usuarioId)
+        {
+            ExigirAmbienteHabilitado();
+            var hoy = HoyPeru();
+            if (fecha > hoy) throw new AbrilException("No se puede enviar el resumen de una fecha futura.", 400);
+
+            using var ctx = _factory.CreateDbContext();
+            var boletas = await ctx.Cpe
+                .Where(c => c.TipoDocumento == "03" && c.FechaEmision == fecha && (c.Estado == "POR_ENVIAR" || c.Estado == "BAJA_SOLICITADA"))
+                .OrderBy(c => c.Serie).ThenBy(c => c.Numero)
+                .Take(500) // máximo de líneas por resumen
+                .ToListAsync();
+            if (boletas.Count == 0) throw new AbrilException("No hay boletas pendientes de informar para esa fecha.", 400);
+
+            var prefijo = $"RC-{hoy:yyyyMMdd}-";
+            var usados = await ctx.CpeResumen.CountAsync(r => r.Identificador.StartsWith(prefijo));
+            var identificador = prefijo + (usados + 1).ToString(CultureInfo.InvariantCulture);
+
+            var (firmado, _) = _signer.Firmar(_xml.BuildResumen(boletas, identificador, fecha, hoy));
+            var res = new CpeResumen
+            {
+                Identificador = identificador, FechaReferencia = fecha, FechaGeneracion = hoy, Estado = "ENVIADO",
+                XmlFirmado = firmado, Cantidad = boletas.Count, CreadoPorUsuarioSistemaId = usuarioId, CreadoEn = DateTimeOffset.UtcNow,
+            };
+            ctx.CpeResumen.Add(res);
+            await ctx.SaveChangesAsync();
+
+            try
+            {
+                var t = await _sunat.EnviarBajaAsync(firmado, $"{_s.RucEmisor}-{identificador}");
+                res.Ticket = t.Ticket;
+            }
+            catch (SunatFaultException ex)
+            {
+                res.Estado = "RECHAZADO";
+                res.SunatCodigo = ex.Codigo;
+                res.SunatDescripcion = ex.Message;
+                res.RespondidoEn = DateTimeOffset.UtcNow;
+                await ctx.SaveChangesAsync();
+                return ADto(res);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            {
+                res.Estado = "RECHAZADO";
+                res.SunatDescripcion = "No se pudo enviar a SUNAT: " + ex.Message;
+                res.RespondidoEn = DateTimeOffset.UtcNow;
+                await ctx.SaveChangesAsync();
+                throw new AbrilException("No se pudo enviar el resumen a SUNAT: " + ex.Message + " Las boletas siguen pendientes; reintenta en unos minutos.", 502);
+            }
+
+            foreach (var b in boletas)
+            {
+                b.ResumenId = res.Id;
+                b.Estado = b.Estado == "BAJA_SOLICITADA" ? "BAJA_PENDIENTE" : "EN_RESUMEN";
+                Log(ctx, b.Id, "RESUMEN", true, null, $"Incluida en {identificador} (ticket {res.Ticket}).");
+            }
+            await ctx.SaveChangesAsync();
+            return await ConsultarResumenInterno(ctx, res);
+        }
+
+        public async Task<CpeResumenDto> ConsultarResumen(long id)
+        {
+            using var ctx = _factory.CreateDbContext();
+            var res = await ctx.CpeResumen.FirstOrDefaultAsync(r => r.Id == id) ?? throw new AbrilException("Resumen no encontrado.", 404);
+            return await ConsultarResumenInterno(ctx, res);
+        }
+
+        public async Task<List<CpeResumenDto>> ListResumenes()
+        {
+            using var ctx = _factory.CreateDbContext();
+            var filas = await ctx.CpeResumen.AsNoTracking().OrderByDescending(r => r.Id).Take(100).ToListAsync();
+            return filas.Select(ADto).ToList();
+        }
+
+        private async Task<CpeResumenDto> ConsultarResumenInterno(AppDbContext ctx, CpeResumen res)
+        {
+            if (res.Estado != "ENVIADO" || string.IsNullOrEmpty(res.Ticket)) return ADto(res);
+            try
+            {
+                var r = await _sunat.ConsultarTicketAsync(res.Ticket);
+                if (r.EnProceso) return ADto(res);
+
+                res.CdrXml = r.CdrXml;
+                res.SunatCodigo = r.Codigo;
+                res.SunatDescripcion = r.Descripcion;
+                res.RespondidoEn = DateTimeOffset.UtcNow;
+                var boletas = await ctx.Cpe.Where(c => c.ResumenId == res.Id).ToListAsync();
+                if (r.Aceptado)
+                {
+                    res.Estado = "ACEPTADO";
+                    foreach (var b in boletas)
+                        b.Estado = b.Estado == "BAJA_PENDIENTE" ? "ANULADO" : "ACEPTADO";
+                }
+                else
+                {
+                    // SUNAT no aceptó el resumen: las boletas vuelven a quedar pendientes para corregir y reenviar.
+                    res.Estado = "RECHAZADO";
+                    foreach (var b in boletas)
+                    {
+                        b.Estado = b.Estado == "BAJA_PENDIENTE" ? "ACEPTADO" : "POR_ENVIAR";
+                        b.ResumenId = null;
+                    }
+                }
+                foreach (var b in boletas) Log(ctx, b.Id, "CONSULTA_RESUMEN", r.Aceptado, r.Codigo, r.Descripcion);
+            }
+            catch (SunatFaultException ex)
+            {
+                res.SunatCodigo = ex.Codigo;
+                res.SunatDescripcion = ex.Message;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            {
+                // Sin respuesta (el Beta suele cortar esta consulta): el resumen sigue ENVIADO y se reintenta.
+                res.SunatDescripcion = "Sin respuesta de SUNAT al consultar el ticket: " + ex.Message;
+            }
+            await ctx.SaveChangesAsync();
+            return ADto(res);
+        }
+
+        private static CpeResumenDto ADto(CpeResumen r) => new()
+        {
+            Id = r.Id, Identificador = r.Identificador, FechaReferencia = r.FechaReferencia, Estado = r.Estado, Ticket = r.Ticket,
+            Cantidad = r.Cantidad, SunatCodigo = r.SunatCodigo, SunatDescripcion = r.SunatDescripcion, CreadoEn = r.CreadoEn,
+        };
+
         // ── Archivos ────────────────────────────────────────────────────────────
 
         public async Task<string> ObtenerXml(long id)
@@ -423,9 +610,9 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
         public async Task<CpeSerieDto> GuardarSerie(CpeSerieUpsertDto dto)
         {
             var serie = (dto.Serie ?? "").Trim().ToUpperInvariant();
-            var prefijoOk = dto.TipoDocumento switch { "01" => serie.StartsWith('F'), "07" or "08" => serie.StartsWith('F'), _ => false };
+            var prefijoOk = dto.TipoDocumento switch { "01" => serie.StartsWith('F'), "07" or "08" => serie.StartsWith('F'), "03" => serie.StartsWith('B'), _ => false };
             if (serie.Length != 4 || !prefijoOk)
-                throw new AbrilException("La serie debe tener 4 caracteres y empezar con F (facturas y sus notas), por ejemplo F001 o FC01.", 400);
+                throw new AbrilException("La serie debe tener 4 caracteres: empieza con F (facturas y sus notas, por ejemplo F001 o FC01) o con B (boletas, por ejemplo B001).", 400);
             if (dto.UltimoNumero < 0) throw new AbrilException("El último número no puede ser negativo.", 400);
 
             using var ctx = _factory.CreateDbContext();

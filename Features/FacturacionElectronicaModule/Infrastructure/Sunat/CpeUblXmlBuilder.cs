@@ -14,6 +14,8 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
         string Build(Cpe cpe);
         /// <summary>XML de la comunicación de baja (RA) de un comprobante ya aceptado.</summary>
         string BuildBaja(Cpe cpe, string identificador, DateOnly hoy);
+        /// <summary>XML del resumen diario (RC) con las boletas de una fecha; las que están en BAJA_SOLICITADA van con estado 3 (anulada).</summary>
+        string BuildResumen(IReadOnlyList<Cpe> boletas, string identificador, DateOnly fechaReferencia, DateOnly hoy);
     }
 
     /// <summary>
@@ -47,7 +49,7 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
         {
             if (c.Numero == null) throw new InvalidOperationException("El comprobante debe tener número antes de generar el XML.");
             var tipo = c.TipoDocumento;
-            var raiz = tipo switch { "01" => "Invoice", "07" => "CreditNote", "08" => "DebitNote", _ => throw new InvalidOperationException($"Tipo {tipo} no soportado.") };
+            var raiz = tipo switch { "01" or "03" => "Invoice", "07" => "CreditNote", "08" => "DebitNote", _ => throw new InvalidOperationException($"Tipo {tipo} no soportado.") };
             XNamespace ns = $"urn:oasis:names:specification:ubl:schema:xsd:{raiz}-2";
             var id = $"{c.Serie}-{c.Numero}";
             var mon = c.Moneda;
@@ -65,10 +67,10 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
                 new XElement(Cbc + "IssueDate", D(c.FechaEmision)),
                 new XElement(Cbc + "IssueTime", hora.ToString("HH:mm:ss", CultureInfo.InvariantCulture)));
 
-            if (tipo == "01")
+            if (tipo is "01" or "03")
             {
                 if (c.FechaVencimiento.HasValue) doc.Add(new XElement(Cbc + "DueDate", D(c.FechaVencimiento.Value)));
-                doc.Add(new XElement(Cbc + "InvoiceTypeCode", new XAttribute("listID", !string.IsNullOrWhiteSpace(c.DetraccionCodigo) && c.TipoOperacion == "0101" ? "1001" : c.TipoOperacion), "01"));
+                doc.Add(new XElement(Cbc + "InvoiceTypeCode", new XAttribute("listID", !string.IsNullOrWhiteSpace(c.DetraccionCodigo) && c.TipoOperacion == "0101" ? "1001" : c.TipoOperacion), tipo));
             }
 
             doc.Add(Cdata(Cbc + "Note", NumeroALetras.Monto(c.Total, mon), new XAttribute("languageLocaleID", "1000")));
@@ -101,7 +103,7 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
             doc.Add(Proveedor());
             doc.Add(Cliente(c));
 
-            if (tipo == "01") AgregarFormaDePago(doc, c);
+            if (tipo is "01" or "03") AgregarFormaDePago(doc, c);
 
             doc.Add(TaxTotalCabecera(c));
             doc.Add(tipo == "08"
@@ -332,6 +334,60 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Sun
                     new XElement(Sac + "VoidReasonDescription", c.BajaMotivo)));
             return Serializar(doc);
         }
+
+        public string BuildResumen(IReadOnlyList<Cpe> boletas, string identificador, DateOnly fechaReferencia, DateOnly hoy)
+        {
+            XNamespace ns = "urn:sunat:names:specification:ubl:peru:schema:xsd:SummaryDocuments-1";
+            var doc = new XElement(ns + "SummaryDocuments",
+                new XAttribute(XNamespace.Xmlns + "cac", Cac),
+                new XAttribute(XNamespace.Xmlns + "cbc", Cbc),
+                new XAttribute(XNamespace.Xmlns + "ds", Ds),
+                new XAttribute(XNamespace.Xmlns + "ext", Ext),
+                new XAttribute(XNamespace.Xmlns + "sac", Sac),
+                new XElement(Ext + "UBLExtensions", new XElement(Ext + "UBLExtension", new XElement(Ext + "ExtensionContent"))),
+                new XElement(Cbc + "UBLVersionID", "2.0"),
+                new XElement(Cbc + "CustomizationID", "1.1"),
+                new XElement(Cbc + "ID", identificador),
+                new XElement(Cbc + "ReferenceDate", D(fechaReferencia)),
+                new XElement(Cbc + "IssueDate", D(hoy)),
+                FirmaRef(identificador),
+                new XElement(Cac + "AccountingSupplierParty",
+                    new XElement(Cbc + "CustomerAssignedAccountID", _s.RucEmisor),
+                    new XElement(Cbc + "AdditionalAccountID", "6"),
+                    new XElement(Cac + "Party",
+                        new XElement(Cac + "PartyLegalEntity", Cdata(Cbc + "RegistrationName", _s.RazonSocialEmisor)))));
+
+            foreach (var (b, i) in boletas.Select((x, i) => (x, i + 1)))
+            {
+                var mon = b.Moneda;
+                var linea = new XElement(Sac + "SummaryDocumentsLine",
+                    new XElement(Cbc + "LineID", i),
+                    new XElement(Cbc + "DocumentTypeCode", "03"),
+                    new XElement(Cbc + "ID", $"{b.Serie}-{b.Numero}"),
+                    new XElement(Cac + "AccountingCustomerParty",
+                        new XElement(Cbc + "CustomerAssignedAccountID", b.ClienteNumeroDoc),
+                        new XElement(Cbc + "AdditionalAccountID", b.ClienteTipoDoc)),
+                    // 1 = adicionar (informar), 3 = anular.
+                    new XElement(Cac + "Status", new XElement(Cbc + "ConditionCode", b.Estado == "BAJA_SOLICITADA" ? "3" : "1")),
+                    Amt(Sac + "TotalAmount", mon, b.Total));
+                if (b.TotalGravado > 0) linea.Add(Pago(mon, b.TotalGravado, "01"));
+                if (b.TotalExonerado > 0) linea.Add(Pago(mon, b.TotalExonerado, "02"));
+                if (b.TotalInafecto > 0) linea.Add(Pago(mon, b.TotalInafecto, "03"));
+                linea.Add(new XElement(Cac + "TaxTotal",
+                    Amt(Cbc + "TaxAmount", mon, b.Igv),
+                    new XElement(Cac + "TaxSubtotal",
+                        Amt(Cbc + "TaxAmount", mon, b.Igv),
+                        new XElement(Cac + "TaxCategory",
+                            // SUNAT exige la tasa del IGV en cada línea del resumen (error 2992 sin ella).
+                            new XElement(Cbc + "Percent", "18.00"),
+                            TaxScheme("1000", "IGV", "VAT")))));
+                doc.Add(linea);
+            }
+            return Serializar(doc);
+        }
+
+        private static XElement Pago(string moneda, decimal monto, string instruccion) =>
+            new(Sac + "BillingPayment", Amt(Cbc + "PaidAmount", moneda, monto), new XElement(Cbc + "InstructionID", instruccion));
 
         private static string Serializar(XElement raiz)
         {

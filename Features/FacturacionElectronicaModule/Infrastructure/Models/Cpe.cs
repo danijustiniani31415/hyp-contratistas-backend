@@ -92,6 +92,8 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Mod
         public long CreadoPorUsuarioSistemaId { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
         public long? EmitidoPorUsuarioSistemaId { get; set; }
+        /// <summary>Boletas: resumen diario (RC) en el que se informó a SUNAT.</summary>
+        public long? ResumenId { get; set; }
 
         [ForeignKey(nameof(ContratoId))]
         public Contrato? Contrato { get; set; }
@@ -125,6 +127,27 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Mod
 
         [ForeignKey(nameof(CpeId))]
         public Cpe? Cpe { get; set; }
+    }
+
+    /// <summary>Resumen diario de boletas (RC): se envía a SUNAT agrupando las boletas de una fecha; la respuesta llega por ticket.</summary>
+    [Table("lb_cpe_resumen")]
+    public class CpeResumen
+    {
+        public long Id { get; set; }
+        public string Identificador { get; set; } = null!;
+        public DateOnly FechaReferencia { get; set; }
+        public DateOnly FechaGeneracion { get; set; }
+        /// <summary>ENVIADO, ACEPTADO o RECHAZADO.</summary>
+        public string Estado { get; set; } = "ENVIADO";
+        public string? Ticket { get; set; }
+        public string? XmlFirmado { get; set; }
+        public string? CdrXml { get; set; }
+        public string? SunatCodigo { get; set; }
+        public string? SunatDescripcion { get; set; }
+        public int Cantidad { get; set; }
+        public long CreadoPorUsuarioSistemaId { get; set; }
+        public DateTimeOffset CreadoEn { get; set; }
+        public DateTimeOffset? RespondidoEn { get; set; }
     }
 
     [Table("lb_cpe_envio")]

@@ -188,3 +188,12 @@ Notas técnicas: EF tiene reintentos automáticos, así que la asignación de co
   la respuesta real de SUNAT se verifica en la primera emisión en producción (códigos de existencia asumidos: 0001, 0002, 0003 [VERIFICAR]). Se apaga con `SunatCpe:VerificarExistenciaAntesDeEmitir = false`.
 - Un comprobante **rechazado** puede "Pedir número nuevo": libera el número fallido y toma el siguiente en el reenvío.
 - Recomendación operativa: una serie por canal (ej. F001 portal, F002 ERP).
+
+### Boletas y resumen diario (2026-11-08)
+- Boleta (03, serie `B001`): DNI o sin documento hasta S/ 700 (cliente "CLIENTES VARIOS"), solo en soles, al contado. Al emitirla se asigna número y se firma su XML como respaldo;
+  **no se envía sola**: queda `POR_ENVIAR` hasta el resumen diario.
+- Resumen diario (RC): agrupa las boletas de una fecha (máx. 500), se firma y se envía con `sendSummary`; SUNAT responde con un ticket. Estados de boleta:
+  `POR_ENVIAR` → `EN_RESUMEN` → `ACEPTADO`; si SUNAT rechaza el resumen vuelven a `POR_ENVIAR`. Anular una boleta aceptada la marca `BAJA_SOLICITADA`: va en el resumen de su fecha con estado 3 y queda `ANULADO`.
+- **Probado en el Beta:** 3 boletas aceptadas (DNI, sin documento y exonerada, enviadas de forma individual para validar su XML). El XML del resumen fue validado por SUNAT al recibirlo
+  (reglas aprendidas: 2992 y 3504 → cada línea lleva `cbc:Percent` 18.00 del IGV) y devolvió ticket. **No verificado:** el resultado final del ticket, porque el `getStatus` del Beta falla.
+- Script: `Migrations_Manual/2026-11-10_lb_boletas_resumen_diario.sql`. Pendiente: boletas con nota de crédito, venta en USD, resumen automático a medianoche (hoy es manual desde la pantalla).

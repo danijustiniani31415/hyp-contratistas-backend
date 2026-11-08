@@ -123,6 +123,7 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.Cpe> Cpe { get; set; }
         public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.CpeItem> CpeItem { get; set; }
         public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.CpeEnvio> CpeEnvio { get; set; }
+        public DbSet<Abril_Backend.Features.FacturacionElectronicaModule.Infrastructure.Models.CpeResumen> CpeResumen { get; set; }
         // ── Las Bravas / HP Constructores: Planillas — motor de cálculo (Fase 3) ──
         public DbSet<ConceptoPlanilla> ConceptoPlanilla { get; set; }
         public DbSet<PlanillaPeriodo> PlanillaPeriodo { get; set; }

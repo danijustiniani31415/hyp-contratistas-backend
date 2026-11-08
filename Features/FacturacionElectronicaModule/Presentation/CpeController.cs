@@ -95,6 +95,23 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Presentation
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
 
+        // ── Resumen diario de boletas ──
+        [HttpGet("resumenes")]
+        public async Task<IActionResult> Resumenes()
+            => Denegar(PermisosDeLectura) ?? await Ejecutar(() => _service.ListResumenes());
+
+        [HttpGet("resumenes/pendientes")]
+        public async Task<IActionResult> ResumenesPendientes()
+            => Denegar(PermisosDeLectura) ?? await Ejecutar(() => _service.PendientesResumen());
+
+        [HttpPost("resumenes/enviar")]
+        public async Task<IActionResult> EnviarResumen([FromQuery] DateOnly fecha)
+            => Denegar("FACTURACION_EMITIR") ?? await Ejecutar(() => _service.EnviarResumen(fecha, CurrentUsuarioSistemaId));
+
+        [HttpPost("resumenes/{id:long}/consultar")]
+        public async Task<IActionResult> ConsultarResumen(long id)
+            => Denegar("FACTURACION_EMITIR") ?? await Ejecutar(() => _service.ConsultarResumen(id));
+
         [HttpGet("series")]
         public async Task<IActionResult> Series()
             => Denegar(PermisosDeLectura) ?? await Ejecutar(() => _service.ListSeries());

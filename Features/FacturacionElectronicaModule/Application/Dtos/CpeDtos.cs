@@ -166,6 +166,28 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Dtos
         public string Motivo { get; set; } = "";
     }
 
+    public class CpeResumenDto
+    {
+        public long Id { get; set; }
+        public string Identificador { get; set; } = "";
+        public DateOnly FechaReferencia { get; set; }
+        public string Estado { get; set; } = "";
+        public string? Ticket { get; set; }
+        public int Cantidad { get; set; }
+        public string? SunatCodigo { get; set; }
+        public string? SunatDescripcion { get; set; }
+        public DateTimeOffset CreadoEn { get; set; }
+    }
+
+    /// <summary>Boletas emitidas de una fecha que todavía no se informaron a SUNAT.</summary>
+    public class CpePendienteResumenDto
+    {
+        public DateOnly Fecha { get; set; }
+        public int Cantidad { get; set; }
+        public int Bajas { get; set; }
+        public decimal Total { get; set; }
+    }
+
     public class CpeSerieDto
     {
         public int Id { get; set; }
