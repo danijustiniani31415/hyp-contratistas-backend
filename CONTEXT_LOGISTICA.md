@@ -686,3 +686,14 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
   editarlos todavía (se agregó el schema, no una pantalla).
 - **Anulación (Comunicación de Baja)** no está implementada — es un documento y flujo aparte en
   SUNAT. El permiso `GUIA_REMISION_ENVIAR` ya contempla esta acción a futuro, pero el endpoint no existe.
+
+**Facturación electrónica SUNAT (2026-11-08) — facturas, notas de crédito/débito y baja:**
+- Módulo `FacturacionElectronicaModule` (ver `DISENO-FACTURACION-SUNAT.md`): borradores, series con correlativo bloqueado (`lb_cpe_serie`),
+  cálculo de IGV, validaciones, XML UBL 2.1, firma reutilizando `XmlDsigSigner`, cliente SOAP `billService`. Tablas `lb_cpe`, `lb_cpe_item`, `lb_cpe_envio`
+  (script `Migrations_Manual/2026-11-09_lb_facturacion_electronica.sql`) y permisos `FACTURACION_VER/CREAR/EMITIR` (solo rol ADMIN).
+- **Probado contra el Beta de SUNAT:** factura contado, crédito+detracción en USD, mixta, exportación, nota de crédito, nota de débito, envío de baja. Reglas aprendidas: 3128 (detracción => tipo de operación 1001), 2800 y 3107 (exportación).
+- **Ambiente:** `SunatCpe:Ambiente` = Beta por defecto; Producción exige además `SunatCpe:PermitirProduccion = true`. Mientras no se active, NO se emite nada real.
+- **Pendiente antes de emitir en producción:** fijar `lb_cpe_serie.ultimo_numero` con el último número real de cada serie (hoy en 0), cargar en `SunatCpe` el usuario/clave SOL,
+  domicilio fiscal (CAL. UNO MZ. B LT. 13 URB. LA MERCED, Ate, ubigeo 150103) y cuenta de detracciones. Usar una serie propia para el ERP (no compartir con el portal SOL).
+- **No verificado:** consulta del ticket de baja (el Beta no responde) y la protección "número ya existe en SUNAT" (`getStatusCdr` no existe en el Beta; falla en silencio).
+- Siguiente: boletas + resumen diario, cuentas por cobrar.
