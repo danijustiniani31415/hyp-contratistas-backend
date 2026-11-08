@@ -412,7 +412,7 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
 
         private async Task<CpeDetailDto> BuildDetail(AppDbContext ctx, long id)
         {
-            var c = await ctx.Cpe.AsNoTracking().Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id)
+            var c = await ctx.Cpe.AsNoTracking().Include(x => x.Items).Include(x => x.Contrato).FirstOrDefaultAsync(x => x.Id == id)
                 ?? throw new AbrilException("Comprobante no encontrado.", 404);
             var avisos = c.Estado is "BORRADOR" or "RECHAZADO" ? CpeValidador.Validar(c, HoyPeru()) : new List<CpeAvisoDto>();
             return new CpeDetailDto
@@ -430,6 +430,10 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Servic
                 SunatCodigo = c.SunatCodigo, SunatDescripcion = c.SunatDescripcion, EnviadoEn = c.EnviadoEn, RespondidoEn = c.RespondidoEn,
                 BajaMotivo = c.BajaMotivo, BajaTicket = c.BajaTicket,
                 TieneXml = c.XmlFirmado != null, TieneCdr = c.CdrXml != null, Ambiente = _s.Ambiente,
+                EmisorRuc = _s.RucEmisor, EmisorRazonSocial = _s.RazonSocialEmisor,
+                EmisorDireccion = string.IsNullOrWhiteSpace(_s.Direccion) ? null : string.Join(" - ", new[] { _s.Direccion, _s.Distrito, _s.Provincia, _s.Departamento }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                XmlHashFirma = c.XmlHashFirma, TotalEnLetras = NumeroALetras.Monto(c.Total, c.Moneda),
+                ContratoCodigo = c.Contrato != null ? c.Contrato.Codigo : null,
                 Items = c.Items.OrderBy(i => i.Orden).Select(i => new CpeItemDetalleDto
                 {
                     Codigo = i.Codigo, Descripcion = i.Descripcion, UnidadMedida = i.UnidadMedida, Cantidad = i.Cantidad,

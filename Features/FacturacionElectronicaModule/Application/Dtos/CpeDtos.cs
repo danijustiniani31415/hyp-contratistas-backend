@@ -129,6 +129,13 @@ namespace Abril_Backend.Features.FacturacionElectronicaModule.Application.Dtos
         public bool TieneCdr { get; set; }
         /// <summary>Beta o Produccion: a qué SUNAT apunta este servidor ahora mismo.</summary>
         public string Ambiente { get; set; } = "";
+        /// <summary>Datos del emisor para la representación impresa.</summary>
+        public string EmisorRuc { get; set; } = "";
+        public string EmisorRazonSocial { get; set; } = "";
+        public string? EmisorDireccion { get; set; }
+        public string? XmlHashFirma { get; set; }
+        public string TotalEnLetras { get; set; } = "";
+        public string? ContratoCodigo { get; set; }
         public List<CpeItemDetalleDto> Items { get; set; } = new();
         public List<CpeAvisoDto> Avisos { get; set; } = new();
     }
