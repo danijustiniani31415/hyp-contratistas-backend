@@ -697,3 +697,13 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
   domicilio fiscal (CAL. UNO MZ. B LT. 13 URB. LA MERCED, Ate, ubigeo 150103) y cuenta de detracciones. Usar una serie propia para el ERP (no compartir con el portal SOL).
 - **No verificado:** consulta del ticket de baja (el Beta no responde) y la protección "número ya existe en SUNAT" (`getStatusCdr` no existe en el Beta; falla en silencio).
 - Siguiente: boletas + resumen diario, cuentas por cobrar.
+
+## Sesión 2026-11-08 — Kardex valorizado, toma de inventario, accesos y rol Contadora
+- **Boletas + resumen diario** ya en producción (migración `2026-11-10_lb_boletas_resumen_diario.sql` aplicada).
+- **Kardex valorizado** (`GET api/v1/almacen/kardex`): recorre `lb_movimiento` con promedio ponderado (igual que `RegistrarMovimiento`); saldo inicial por `desde`.
+- **Toma de inventario** (`api/v1/almacen/inventarios`, tablas `lb_inventario`/`lb_inventario_item`): EN_CONTEO → CERRADO/ANULADO; al cerrar compara contra el stock VIGENTE y genera movimientos INGRESO/SALIDA con referencia `INVENTARIO` en una sola transacción. Un conteo abierto por almacén.
+- **Alcance por proyecto en almacén** (`AlmacenAlcance`): permisos `ALMACEN_VER`/`ALMACEN_AJUSTAR`; quien los tiene solo en un proyecto ve únicamente los almacenes de ese proyecto (el central queda fuera). Aplica a stock, movimientos, reposición, umbrales, kardex e inventario.
+- **Rol CONTADORA** (todos los permisos a la fecha del script; los permisos nuevos que se creen después hay que asignárselos) y permiso opcional `PAGO_PROVEEDOR_REGISTRAR` (Gerente, Admin, Contadora). ADMINISTRATIVO ahora tiene tareo, planillas, recibir pedidos/compras y ver almacén.
+- **Pantalla Accesos** (`GET api/v1/accesos` + asignaciones de Personas). Los cambios de rol aplican al próximo login (los permisos viajan en el JWT).
+- Migraciones aplicadas en producción: `2026-11-11_lb_inventario.sql`, `2026-11-12_lb_rol_contadora_y_permisos_almacen_pagos.sql`.
+- **Pendiente:** probar el alcance con un usuario de un solo proyecto; revisar el flujo de aprobación de pedidos; cuentas por cobrar; pantalla de pagos a proveedores (hoy solo existe el permiso); datos reales (cuenta de detracciones, serie del ERP, SOL).

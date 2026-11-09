@@ -87,6 +87,8 @@ namespace Abril_Backend.Infrastructure.Data
         // ── Las Bravas / HP Constructores: Almacén / Kardex (Fase 1, punto 3) ──
         public DbSet<Stock> Stock { get; set; }
         public DbSet<Movimiento> Movimiento { get; set; }
+        public DbSet<Inventario> Inventario { get; set; }
+        public DbSet<InventarioItem> InventarioItem { get; set; }
         // ── Las Bravas / HP Constructores: Pedidos (Fase 2) ──
         public DbSet<Pedido> Pedido { get; set; }
         public DbSet<PedidoItem> PedidoItem { get; set; }

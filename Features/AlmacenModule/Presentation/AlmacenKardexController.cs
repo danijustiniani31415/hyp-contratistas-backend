@@ -5,6 +5,9 @@ using Abril_Backend.Features.AlmacenModule.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Abril_Backend.Features.PersonasModule;
+using Abril_Backend.Features.AlmacenModule.Application.Services;
+using Abril_Backend.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace Abril_Backend.Features.AlmacenModule.Presentation
 {
@@ -15,11 +18,15 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
     public class AlmacenKardexController : ControllerBase
     {
         private readonly IAlmacenKardexService _service;
+        private readonly IDbContextFactory<AppDbContext> _factory;
 
-        public AlmacenKardexController(IAlmacenKardexService service)
+        public AlmacenKardexController(IAlmacenKardexService service, IDbContextFactory<AppDbContext> factory)
         {
             _service = service;
+            _factory = factory;
         }
+
+        private Task<HashSet<int>?> Alcance() => AlmacenAlcance.Resolver(_factory, User, "ALMACEN_VER", "ALMACEN_AJUSTAR");
 
         private long? CurrentUsuarioSistemaId =>
             long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
@@ -27,7 +34,7 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
         [HttpGet("stock")]
         public async Task<IActionResult> ListStock([FromQuery] int? almacenId, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            try { return Ok(await _service.ListStock(almacenId, search, page, pageSize)); }
+            try { return Ok(await _service.ListStock(almacenId, search, page, pageSize, await Alcance())); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -35,7 +42,7 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
         [HttpGet("movimientos")]
         public async Task<IActionResult> ListMovimientos([FromQuery] int? almacenId, [FromQuery] long? productoId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            try { return Ok(await _service.ListMovimientos(almacenId, productoId, page, pageSize)); }
+            try { return Ok(await _service.ListMovimientos(almacenId, productoId, page, pageSize, await Alcance())); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -47,7 +54,7 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
                 return StatusCode(403, new { message = "No tienes permiso para registrar movimientos de almacén." });
             try
             {
-                await _service.RegistrarMovimiento(dto, CurrentUsuarioSistemaId);
+                await _service.RegistrarMovimiento(dto, CurrentUsuarioSistemaId, await Alcance());
                 return Ok(new { message = "Movimiento registrado." });
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
@@ -57,7 +64,7 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
         [HttpGet("reposicion-sugerida")]
         public async Task<IActionResult> ListReposicionSugerida([FromQuery] int? almacenId)
         {
-            try { return Ok(await _service.ListReposicionSugerida(almacenId)); }
+            try { return Ok(await _service.ListReposicionSugerida(almacenId, await Alcance())); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }
@@ -69,7 +76,7 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
                 return StatusCode(403, new { message = "No tienes permiso para ajustar umbrales de almacén." });
             try
             {
-                await _service.AjustarUmbrales(dto);
+                await _service.AjustarUmbrales(dto, await Alcance());
                 return Ok(new { message = "Umbrales actualizados." });
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
