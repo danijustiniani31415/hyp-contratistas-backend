@@ -12,6 +12,8 @@ namespace Abril_Backend.Features.ComprasModule
             // Lectura de comprobantes con IA (Gemini). Cambiar de proveedor de IA = otra implementación de IComprobanteLectorService.
             services.AddHttpClient<IComprobanteLectorService, GeminiComprobanteLectorService>(c => c.Timeout = TimeSpan.FromSeconds(90));
             services.AddScoped<IComprobanteCompraService, ComprobanteCompraService>();
+            services.AddScoped<PagosProveedorService>();
+            services.AddScoped<PagosProveedorService>();
             return services;
         }
     }

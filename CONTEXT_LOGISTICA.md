@@ -707,3 +707,10 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
 - **Pantalla Accesos** (`GET api/v1/accesos` + asignaciones de Personas). Los cambios de rol aplican al próximo login (los permisos viajan en el JWT).
 - Migraciones aplicadas en producción: `2026-11-11_lb_inventario.sql`, `2026-11-12_lb_rol_contadora_y_permisos_almacen_pagos.sql`.
 - **Pendiente:** probar el alcance con un usuario de un solo proyecto; revisar el flujo de aprobación de pedidos; cuentas por cobrar; pantalla de pagos a proveedores (hoy solo existe el permiso); datos reales (cuenta de detracciones, serie del ERP, SOL).
+
+## Sesión 2026-11-10 — Pagos a proveedores, roles reales y alcance por proyecto
+- **Pagos a proveedores (cuentas por pagar):** `lb_pago_proveedor` (migración `2026-11-15`), `PagosProveedorService`, `PagosProveedorController` (`api/v1/pagos-proveedores`). Todo exige `PAGO_PROVEEDOR_REGISTRAR`. Cada pago va contra un `lb_comprobante_compra` (no se pagan NC/ND/guías); saldo = total − pagos VIGENTES; pagos totales o parciales; anular exige motivo y queda en historial; el registro bloquea el comprobante (`FOR UPDATE`) para que pagos simultáneos no pasen del saldo. Front: `/pagos-proveedores` (menú Logística).
+- **Roles:** nuevo `GERENTE_OPERACIONES` y `LOGISTICA` suma `COMPRA_CREAR`, `COMPRA_RECIBIR`, `PAGO_PROVEEDOR_REGISTRAR` (migración `2026-11-13`).
+- **Bug corregido:** los almacenes tipo PROYECTO no tenían `proyecto_id`, por lo que el alcance por proyecto dejaba sin almacén a residentes/administradores de obra (migración `2026-11-14`; en prod hay 2 almacenes de proyecto sin vincular).
+- **Probado en local (API + pantalla):** pedido → visa residente → aprueba gerente → OC desde pedidos → recepción parcial/total (stock sube) → comprobante → pago → entrega (stock baja); permisos por rol; pagos simultáneos.
+- **Pendiente:** aplicar migraciones 13, 14 y 15 en producción; alta de usuarios reales (faltan DNI/nombres; Renan/legal sin definir); confirmar con Claudio el envío de correo en producción; los correos de notificación fallan en silencio (no hay log).
