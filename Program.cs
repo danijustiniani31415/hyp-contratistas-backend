@@ -340,7 +340,7 @@ builder.Services.AddRateLimiter(options =>
         var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 5,
+            PermitLimit = 30,
             Window = TimeSpan.FromHours(1),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit = 0
@@ -493,6 +493,16 @@ if (app.Environment.IsDevelopment())
         c.RoutePrefix = "swagger"; // opcional
     });
 }
+// Detrás de nginx: sin esto TODAS las peticiones llegan con la IP del proxy, y el límite por IP de lb-auth/sunat-ruc
+// se convertía en un único cupo para toda la empresa (5 intentos de login por hora entre todos los usuarios).
+// El backend solo escucha en 127.0.0.1 (nginx es lo único que lo alcanza), por eso se confía en X-Forwarded-For.
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto,
+};
+forwardedOptions.KnownNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
 if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 app.UseAuthentication();
