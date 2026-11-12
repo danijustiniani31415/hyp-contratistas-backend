@@ -62,6 +62,13 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
 
         /// <summary>true cuando ya se movió el stock y se avanzó el pedido (recién al ser ACEPTADA por SUNAT).</summary>
         public bool DespachoAplicado { get; set; }
+        /// <summary>false = mercadería en tránsito: el origen ya descontó pero el destino se acredita al recibir.
+        /// true = guías anteriores a la recepción con control, cuyo destino ya se acreditó completo al aceptarse.</summary>
+        public bool DestinoAcreditado { get; set; } = true;
+        /// <summary>PENDIENTE (en camino), PARCIAL, COMPLETA o CON_DIFERENCIAS.</summary>
+        public string RecepcionEstado { get; set; } = "PENDIENTE";
+        public DateTimeOffset? RecepcionCerradaEn { get; set; }
+        public DateTimeOffset? RecordatorioEnviadoEn { get; set; }
 
         public string? XmlNombreArchivo { get; set; }
         public string? XmlHashFirma { get; set; }

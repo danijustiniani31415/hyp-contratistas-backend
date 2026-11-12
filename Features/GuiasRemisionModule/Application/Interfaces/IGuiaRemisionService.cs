@@ -24,7 +24,6 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces
         /// menos, se ajusta ese sobre-crédito con una SALIDA y la diferencia vuelve a quedar
         /// pendiente en el pedido de origen (si el ítem estaba ligado a uno).
         /// </summary>
-        Task<GuiaRemisionDetailDto> ConfirmarRecepcion(long id, ConfirmarRecepcionDto dto, long confirmadoPorId, LbScopeProyectos scope);
 
         /// <summary>
         /// Elimina una guía en BORRADOR (nunca transmitida a SUNAT): devuelve el stock con

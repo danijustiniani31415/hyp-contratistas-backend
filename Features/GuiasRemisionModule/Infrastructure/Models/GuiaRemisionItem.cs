@@ -32,7 +32,11 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Models
         /// segundo movimiento de stock. Si CantidadConfirmada &lt; Cantidad, ConfirmarRecepcion
         /// registra el ajuste (SALIDA) que corrige el sobre-crédito inicial.
         /// </summary>
+        /// <summary>Acumulado de lo que llegó bien y entró al stock del destino.</summary>
         public decimal? CantidadConfirmada { get; set; }
+        public decimal CantidadDanada { get; set; }
+        /// <summary>Lo que se dio por no llegado al cerrar la recepción.</summary>
+        public decimal CantidadFaltante { get; set; }
         public DateTimeOffset? ConfirmadoEn { get; set; }
         public long? ConfirmadoPorUsuarioSistemaId { get; set; }
 

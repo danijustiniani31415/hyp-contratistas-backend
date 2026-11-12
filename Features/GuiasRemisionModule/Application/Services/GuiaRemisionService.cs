@@ -181,20 +181,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     ReferenciaId = guia.Id,
                 }, guia.CreadoPorUsuarioSistemaId);
 
-                if (guia.AlmacenDestinoId.HasValue)
-                {
-                    await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
-                    {
-                        AlmacenId = guia.AlmacenDestinoId.Value,
-                        ProductoId = item.ProductoId!.Value,
-                        Talla = item.Talla,
-                        Color = item.Color,
-                        TipoMovimiento = "INGRESO",
-                        Cantidad = item.Cantidad,
-                        ReferenciaTipo = "GUIA_REMISION",
-                        ReferenciaId = guia.Id,
-                    }, guia.CreadoPorUsuarioSistemaId);
-                }
+                // Mercadería en tránsito: el destino NO se acredita acá. El stock entra al almacén de destino recién cuando
+                // alguien confirma lo que llegó (ver RecepcionGuiaService), así la mina no ve como disponible lo que sigue en camino.
 
                 // Si este ítem despacha un pedido puntual, avanza su trazabilidad — recién con
                 // esto el pedido sabe que ya salió de Lima, antes de que mina confirme.
@@ -206,6 +194,8 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
             }
 
             guia.DespachoAplicado = true;
+            // Con destino propio la mercadería queda en tránsito hasta la recepción; sin destino no hay nada que recibir.
+            guia.DestinoAcreditado = !guia.AlmacenDestinoId.HasValue;
             await ctx.SaveChangesAsync();
         }
 
@@ -305,9 +295,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     (g.AlmacenDestino != null && g.AlmacenDestino.Nombre.ToLower().Contains(s)));
             }
             if (!string.IsNullOrWhiteSpace(estado)) query = query.Where(g => g.Estado == estado);
-            // La guía no tiene proyecto propio — se filtra por el proyecto de su almacén de origen.
+            // La guía no tiene proyecto propio — se filtra por el proyecto de su almacén de origen O el de destino: quien
+            // recibe en la mina debe ver las guías que le llegan, aunque salgan del almacén central (sin proyecto).
             if (proyectosPermitidos != null)
-                query = query.Where(g => g.AlmacenOrigen!.ProyectoId != null && proyectosPermitidos.Contains(g.AlmacenOrigen.ProyectoId.Value));
+                query = query.Where(g =>
+                    (g.AlmacenOrigen!.ProyectoId != null && proyectosPermitidos.Contains(g.AlmacenOrigen.ProyectoId.Value))
+                    || (g.AlmacenDestino != null && g.AlmacenDestino.ProyectoId != null && proyectosPermitidos.Contains(g.AlmacenDestino.ProyectoId.Value)));
 
             var total = await query.CountAsync();
             var data = await query
@@ -324,6 +317,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     FechaTraslado = g.FechaTraslado,
                     CantidadItems = g.Items.Count,
                     CreadoEn = g.CreadoEn,
+                    RecepcionEstado = g.RecepcionEstado,
+                    TieneDestino = g.AlmacenDestinoId != null,
+                    DiferenciasAbiertas = ctx.GuiaDiferencia.Count(d => d.GuiaRemisionId == g.Id && d.Estado == "ABIERTA"),
                 })
                 .ToListAsync();
 
@@ -459,78 +455,6 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 await ctx.SaveChangesAsync();
                 if (consulta.Aceptado) await AplicarDespacho(ctx, guia);
             }
-
-            return await BuildDetail(ctx, id);
-        }
-
-        public async Task<GuiaRemisionDetailDto> ConfirmarRecepcion(long id, ConfirmarRecepcionDto dto, long confirmadoPorId, LbScopeProyectos scope)
-        {
-            if (dto.Items.Count == 0)
-                throw new AbrilException("Indica la cantidad confirmada de al menos un ítem.", 400);
-
-            using var ctx = _factory.CreateDbContext();
-            var guia = await ctx.GuiaRemision
-                .Include(g => g.AlmacenDestino)
-                .Include(g => g.Items)
-                .FirstOrDefaultAsync(g => g.Id == id)
-                ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
-
-            if (guia.AlmacenDestinoId is null || guia.AlmacenDestino is null)
-                throw new AbrilException("Esta guía no tiene almacén de destino — no hay nada que confirmar.", 400);
-
-            // Se confirma del lado del destino (mina), no del origen (Lima) que la despachó.
-            if (guia.AlmacenDestino.ProyectoId.HasValue && !scope.Permite(guia.AlmacenDestino.ProyectoId.Value))
-                throw new AbrilException("No tienes permiso para confirmar recepción en el proyecto de destino de esta guía.", 403);
-
-            // El destino se acredita recién cuando SUNAT acepta la guía: sin eso no hay stock que ajustar.
-            if (guia.Estado != "ACEPTADA")
-                throw new AbrilException($"Esta guía todavía no fue aceptada por SUNAT (estado {guia.Estado}) — confírmala cuando esté ACEPTADA.", 400);
-
-            if (guia.Items.Any(i => i.ConfirmadoEn != null))
-                throw new AbrilException("Esta guía ya tiene una confirmación de recepción registrada.", 400);
-
-            var idsFaltantes = guia.Items.Select(i => i.Id).Except(dto.Items.Select(i => i.ItemId)).ToList();
-            if (idsFaltantes.Count > 0)
-                throw new AbrilException("Debes confirmar la cantidad recibida de todos los ítems de la guía.", 400);
-
-            foreach (var itemDto in dto.Items)
-            {
-                var item = guia.Items.FirstOrDefault(i => i.Id == itemDto.ItemId)
-                    ?? throw new AbrilException($"Ítem {itemDto.ItemId} no pertenece a esta guía.", 404);
-
-                if (itemDto.CantidadConfirmada < 0 || itemDto.CantidadConfirmada > item.Cantidad)
-                    throw new AbrilException($"La cantidad confirmada de '{item.Talla}' debe estar entre 0 y {item.Cantidad}.", 400);
-
-                item.CantidadConfirmada = itemDto.CantidadConfirmada;
-                item.ConfirmadoEn = DateTimeOffset.UtcNow;
-                item.ConfirmadoPorUsuarioSistemaId = confirmadoPorId;
-
-                var faltante = item.Cantidad - itemDto.CantidadConfirmada;
-                if (faltante > 0 && item.ProductoId.HasValue)
-                {
-                    // Al crear la guía ya se acreditó el destino con Cantidad completa — si llegó
-                    // menos, se corrige ese sobre-crédito para que el kardex no quede inflado.
-                    await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
-                    {
-                        AlmacenId = guia.AlmacenDestinoId.Value,
-                        ProductoId = item.ProductoId.Value,
-                        Talla = item.Talla,
-                        Color = item.Color,
-                        TipoMovimiento = "SALIDA",
-                        Cantidad = faltante,
-                        ReferenciaTipo = "GUIA_REMISION_AJUSTE",
-                        ReferenciaId = guia.Id,
-                    }, confirmadoPorId);
-                }
-
-                if (item.PedidoItemId.HasValue)
-                {
-                    var pedidoItem = await ctx.PedidoItem.FindAsync(item.PedidoItemId.Value);
-                    if (pedidoItem != null) pedidoItem.CantidadConfirmadaMina += itemDto.CantidadConfirmada;
-                }
-            }
-
-            await ctx.SaveChangesAsync();
 
             return await BuildDetail(ctx, id);
         }
@@ -686,6 +610,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 .FirstOrDefaultAsync(g => g.Id == id)
                 ?? throw new AbrilException("Guía de remisión no encontrada.", 404);
 
+            var diferencias = await RecepcionGuiaService.Armar(ctx, await ctx.GuiaDiferencia.AsNoTracking()
+                .Where(d => d.GuiaRemisionId == guia.Id).OrderBy(d => d.Estado == "RESUELTA").ThenBy(d => d.Id).ToListAsync());
+
             return new GuiaRemisionDetailDto
             {
                 Id = guia.Id,
@@ -737,6 +664,11 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                 ConfirmacionPendiente = guia.AlmacenDestinoId != null
                     && guia.Estado == "ACEPTADA"
                     && guia.Items.All(i => i.ConfirmadoEn == null),
+                RecepcionEstado = guia.RecepcionEstado,
+                PuedeRecibir = guia.AlmacenDestinoId != null && guia.Estado == "ACEPTADA" && guia.RecepcionEstado is "PENDIENTE" or "PARCIAL",
+                DiferenciasAbiertas = diferencias.Count(d => d.Estado == "ABIERTA"),
+                Recepciones = await RecepcionGuiaService.Historial(ctx, guia.Id),
+                Diferencias = diferencias,
                 Items = guia.Items.Select(i => new GuiaRemisionItemDetailDto
                 {
                     Id = i.Id,
@@ -752,6 +684,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Services
                     PedidoItemId = i.PedidoItemId,
                     PedidoCodigo = i.PedidoItem?.Pedido?.Codigo,
                     CantidadConfirmada = i.CantidadConfirmada,
+                    CantidadDanada = i.CantidadDanada,
+                    CantidadFaltante = i.CantidadFaltante,
+                    CantidadPendiente = Math.Max(0, i.Cantidad - (i.CantidadConfirmada ?? 0) - i.CantidadDanada - i.CantidadFaltante),
                     ConfirmadoEn = i.ConfirmadoEn,
                     ConfirmadoPorNombre = i.ConfirmadoPor != null
                         ? $"{i.ConfirmadoPor.Persona!.Apellidos} {i.ConfirmadoPor.Persona.Nombres}"

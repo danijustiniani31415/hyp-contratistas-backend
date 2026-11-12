@@ -714,3 +714,9 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
 - **Bug corregido:** los almacenes tipo PROYECTO no tenían `proyecto_id`, por lo que el alcance por proyecto dejaba sin almacén a residentes/administradores de obra (migración `2026-11-14`; en prod hay 2 almacenes de proyecto sin vincular).
 - **Probado en local (API + pantalla):** pedido → visa residente → aprueba gerente → OC desde pedidos → recepción parcial/total (stock sube) → comprobante → pago → entrega (stock baja); permisos por rol; pagos simultáneos.
 - **Pendiente:** aplicar migraciones 13, 14 y 15 en producción; alta de usuarios reales (faltan DNI/nombres; Renan/legal sin definir); confirmar con Claudio el envío de correo en producción; los correos de notificación fallan en silencio (no hay log).
+
+## Sesión 2026-11-11 — Recepción con control (fase 1)
+- Guías: al aceptarse SUNAT el stock sale del origen y queda "en tránsito"; el destino solo sube al recibir (`RecepcionGuiaService`). Guías legacy (`destino_acreditado=true`) restan dañado/faltante como antes.
+- Recepción por viajes (ok/dañado/faltante, motivo, fotos), diferencias ABIERTA/RESUELTA (REPOSICION/RECLAMO/MERMA con PEDIDO_APROBAR/LLEGO), correos a logística/gerencias (+contadora en merma), recordatorio 24h (`RecordatorioRecepcionService`).
+- Migración `2026-11-16_lb_guia_recepcion_control.sql`. Lista de guías filtra por origen O destino.
+- Pendiente: fase 2 (compras, entregas parciales de pedido, sobrantes); correos reales sin verificar.

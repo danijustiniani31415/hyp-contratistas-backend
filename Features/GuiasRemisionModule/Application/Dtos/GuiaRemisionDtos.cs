@@ -14,15 +14,90 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public long? PedidoItemId { get; set; }
     }
 
-    public class ConfirmarRecepcionItemDto
+    /// <summary>Lo que llegó de un ítem en este viaje: cuánto bien y cuánto dañado. Lo que no se declare queda pendiente
+    /// (o, si se cierra la recepción, pasa a faltante).</summary>
+    public class RecepcionItemDto
     {
         public long ItemId { get; set; }
-        public decimal CantidadConfirmada { get; set; }
+        public decimal CantidadOk { get; set; }
+        public decimal CantidadDanada { get; set; }
+        /// <summary>Motivo del daño o del faltante (ver catálogo en RecepcionGuiaService).</summary>
+        public string? Motivo { get; set; }
+        public string? Observacion { get; set; }
     }
 
-    public class ConfirmarRecepcionDto
+    public class RecepcionRegistrarDto
     {
-        public List<ConfirmarRecepcionItemDto> Items { get; set; } = new();
+        /// <summary>true = ya no llegará más: lo pendiente se declara faltante y la recepción se cierra.</summary>
+        public bool Cierra { get; set; }
+        public string? Observacion { get; set; }
+        public List<RecepcionItemDto> Items { get; set; } = new();
+    }
+
+    public class RecepcionResultadoDto
+    {
+        public long RecepcionId { get; set; }
+        public string RecepcionEstado { get; set; } = "";
+        public int DiferenciasNuevas { get; set; }
+    }
+
+    public class DiferenciaResolverDto
+    {
+        /// <summary>REPOSICION, RECLAMO, MERMA o LLEGO.</summary>
+        public string Resolucion { get; set; } = "";
+        public string? Nota { get; set; }
+    }
+
+    public class RecepcionHistorialItemDto
+    {
+        public string ProductoNombre { get; set; } = "";
+        public string Talla { get; set; } = "";
+        public decimal CantidadOk { get; set; }
+        public decimal CantidadDanada { get; set; }
+        public decimal CantidadFaltante { get; set; }
+        public string? Motivo { get; set; }
+        public string? Observacion { get; set; }
+    }
+
+    public class RecepcionHistorialDto
+    {
+        public long Id { get; set; }
+        public DateTimeOffset RecibidoEn { get; set; }
+        public string RecibidoPorNombre { get; set; } = "";
+        public bool Cierra { get; set; }
+        public string? Observacion { get; set; }
+        public List<long> FotoIds { get; set; } = new();
+        public List<RecepcionHistorialItemDto> Items { get; set; } = new();
+    }
+
+    public class DiferenciaDto
+    {
+        public long Id { get; set; }
+        public long GuiaId { get; set; }
+        public string GuiaCodigo { get; set; } = "";
+        public string? AlmacenDestinoNombre { get; set; }
+        public string ProductoNombre { get; set; } = "";
+        public string Talla { get; set; } = "";
+        public string UnidadMedida { get; set; } = "NIU";
+        public string Tipo { get; set; } = "";
+        public decimal Cantidad { get; set; }
+        public string? Motivo { get; set; }
+        public string? Observacion { get; set; }
+        public string Estado { get; set; } = "";
+        public string? Resolucion { get; set; }
+        public string? ResolucionNota { get; set; }
+        public string? ReportadoPorNombre { get; set; }
+        public DateTimeOffset CreadoEn { get; set; }
+        public string? ResueltaPorNombre { get; set; }
+        public DateTimeOffset? ResueltaEn { get; set; }
+        public decimal ValorEstimado { get; set; }
+    }
+
+    public class DiferenciasResumenDto
+    {
+        public int Abiertas { get; set; }
+        public int Resueltas { get; set; }
+        public List<DiferenciaDto> Data { get; set; } = new();
     }
 
     public class ConductorSecundarioDto
@@ -94,7 +169,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public string UnidadMedida { get; set; } = "NIU";
         public long? PedidoItemId { get; set; }
         public string? PedidoCodigo { get; set; }
+        /// <summary>Lo que llegó bien (acumulado de todos los viajes).</summary>
         public decimal? CantidadConfirmada { get; set; }
+        public decimal CantidadDanada { get; set; }
+        public decimal CantidadFaltante { get; set; }
+        /// <summary>Lo que todavía no se ha declarado: Cantidad - bien - dañado - faltante.</summary>
+        public decimal CantidadPendiente { get; set; }
         public DateTimeOffset? ConfirmadoEn { get; set; }
         public string? ConfirmadoPorNombre { get; set; }
     }
@@ -161,6 +241,14 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         /// recepción todavía — gatilla el botón "Confirmar recepción" en el frontend.</summary>
         public bool ConfirmacionPendiente { get; set; }
 
+        /// <summary>PENDIENTE (en camino), PARCIAL, COMPLETA o CON_DIFERENCIAS.</summary>
+        public string RecepcionEstado { get; set; } = "PENDIENTE";
+        /// <summary>Aceptada por SUNAT, con destino y sin cerrar la recepción: la mercadería está en camino o por recibir.</summary>
+        public bool PuedeRecibir { get; set; }
+        public int DiferenciasAbiertas { get; set; }
+        public List<RecepcionHistorialDto> Recepciones { get; set; } = new();
+        public List<DiferenciaDto> Diferencias { get; set; } = new();
+
         public List<GuiaRemisionItemDetailDto> Items { get; set; } = new();
     }
 
@@ -174,6 +262,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Application.Dtos
         public DateOnly FechaTraslado { get; set; }
         public int CantidadItems { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
+        public string RecepcionEstado { get; set; } = "PENDIENTE";
+        public bool TieneDestino { get; set; }
+        public int DiferenciasAbiertas { get; set; }
     }
 
     public class GuiaRemisionListResponseDto

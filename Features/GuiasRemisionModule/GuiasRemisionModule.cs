@@ -1,6 +1,7 @@
 using Abril_Backend.Features.DocumentosModule;
 using Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces;
 using Abril_Backend.Features.GuiasRemisionModule.Application.Services;
+using Abril_Backend.Features.GuiasRemisionModule.Infrastructure;
 using Abril_Backend.Features.GuiasRemisionModule.Infrastructure.Sunat;
 using Microsoft.Extensions.Options;
 
@@ -14,6 +15,9 @@ namespace Abril_Backend.Features.GuiasRemisionModule
             services.Configure<SunatGreSettings>(configuration.GetSection("SunatGre"));
             services.AddScoped<IGuiaRemisionService, GuiaRemisionService>();
             services.AddScoped<IGuiaMaestrosService, GuiaMaestrosService>();
+            // Recepción con control (viajes, dañados, faltantes, diferencias) y su recordatorio automático.
+            services.AddScoped<RecepcionGuiaService>();
+            services.AddHostedService<RecordatorioRecepcionService>();
             // Reconocimiento de DNI/RUC que usan las guías y Compras (se registra acá para no tocar Program.cs).
             services.AddDocumentosModule();
             services.AddScoped<IGuiaRemisionXmlBuilder, GuiaRemisionUblXmlBuilder>();

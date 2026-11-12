@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Abril_Backend.Application.Exceptions;
 using Abril_Backend.Features.GuiasRemisionModule.Application.Dtos;
 using Abril_Backend.Features.GuiasRemisionModule.Application.Interfaces;
+using Abril_Backend.Features.GuiasRemisionModule.Application.Services;
 using Abril_Backend.Features.PersonasModule;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,10 +17,12 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
     public class GuiaRemisionController : ControllerBase
     {
         private readonly IGuiaRemisionService _service;
+        private readonly RecepcionGuiaService _recepcion;
 
-        public GuiaRemisionController(IGuiaRemisionService service)
+        public GuiaRemisionController(IGuiaRemisionService service, RecepcionGuiaService recepcion)
         {
             _service = service;
+            _recepcion = recepcion;
         }
 
         private long CurrentUsuarioSistemaId =>
@@ -118,15 +121,79 @@ namespace Abril_Backend.Features.GuiasRemisionModule.Presentation
             }
         }
 
-        [HttpPost("{id:long}/confirmar-recepcion")]
-        public async Task<IActionResult> ConfirmarRecepcion(long id, [FromBody] ConfirmarRecepcionDto dto)
+        /// <summary>Registra un viaje de recepción en el almacén de destino (llegó bien / dañado / al cerrar, faltante).</summary>
+        [HttpPost("{id:long}/recepciones")]
+        public async Task<IActionResult> RegistrarRecepcion(long id, [FromBody] RecepcionRegistrarDto dto)
         {
             if (!User.HasLbPermiso("GUIA_REMISION_CONFIRMAR"))
-                return StatusCode(403, new { message = "No tienes permiso para confirmar recepción de guías de remisión." });
+                return StatusCode(403, new { message = "No tienes permiso para recibir guías de remisión." });
             try
             {
                 var scope = User.GetProyectosPermitidos("GUIA_REMISION_CONFIRMAR");
-                return Ok(await _service.ConfirmarRecepcion(id, dto, CurrentUsuarioSistemaId, scope));
+                return Ok(await _recepcion.Registrar(id, dto, CurrentUsuarioSistemaId, scope));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPost("recepciones/{recepcionId:long}/fotos")]
+        [RequestSizeLimit(7 * 1024 * 1024)]
+        public async Task<IActionResult> SubirFoto(long recepcionId, IFormFile foto)
+        {
+            if (!User.HasLbPermiso("GUIA_REMISION_CONFIRMAR"))
+                return StatusCode(403, new { message = "No tienes permiso para recibir guías de remisión." });
+            if (foto == null || foto.Length == 0) return BadRequest(new { message = "Adjunta una foto." });
+            try
+            {
+                using var ms = new MemoryStream();
+                await foto.CopyToAsync(ms);
+                return Ok(new { id = await _recepcion.GuardarFoto(recepcionId, foto.FileName, foto.ContentType, ms.ToArray(), CurrentUsuarioSistemaId) });
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpGet("recepciones/fotos/{fotoId:long}")]
+        public async Task<IActionResult> VerFoto(long fotoId)
+        {
+            if (!PermisosDeLectura.Any(User.HasLbPermiso))
+                return StatusCode(403, new { message = "No tienes permiso para ver guías de remisión." });
+            try
+            {
+                var (contenido, mime) = await _recepcion.ObtenerFoto(fotoId);
+                return File(contenido, mime);
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        /// <summary>Diferencias de recepción (faltantes y dañados), abiertas o resueltas, acotadas a los proyectos del usuario.</summary>
+        [HttpGet("diferencias")]
+        public async Task<IActionResult> ListarDiferencias([FromQuery] string? estado, [FromQuery] long? guiaId)
+        {
+            if (!PermisosDeLectura.Any(User.HasLbPermiso))
+                return StatusCode(403, new { message = "No tienes permiso para ver las diferencias de recepción." });
+            try
+            {
+                var scope = User.GetProyectosPermitidosUnion(PermisosDeLectura);
+                return Ok(await _recepcion.ListarDiferencias(estado, guiaId, scope));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        /// <summary>Resuelve una diferencia: reposición, reclamo, merma (necesita aprobación de gerencia) o "llegó después".</summary>
+        [HttpPost("diferencias/{id:long}/resolver")]
+        public async Task<IActionResult> ResolverDiferencia(long id, [FromBody] DiferenciaResolverDto dto)
+        {
+            if (!User.HasLbPermiso("GUIA_REMISION_ENVIAR"))
+                return StatusCode(403, new { message = "No tienes permiso para resolver diferencias de recepción." });
+            if (string.Equals(dto.Resolucion, "MERMA", StringComparison.OrdinalIgnoreCase) && !User.HasLbPermiso("PEDIDO_APROBAR"))
+                return StatusCode(403, new { message = "Dar de baja una mercadería (merma) requiere la aprobación de gerencia." });
+            try
+            {
+                var scope = User.GetProyectosPermitidosUnion(PermisosDeLectura);
+                return Ok(await _recepcion.Resolver(id, dto, CurrentUsuarioSistemaId, scope));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
