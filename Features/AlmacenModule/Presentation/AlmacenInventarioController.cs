@@ -59,7 +59,26 @@ namespace Abril_Backend.Features.AlmacenModule.Presentation
 
         [HttpPost("inventarios/{id:long}/cerrar")]
         public async Task<IActionResult> Cerrar(long id) =>
-            SinPermiso() ?? await Run(async () => await _service.Cerrar(id, UsuarioId, await Alcance()));
+            SinPermiso() ?? await Run(async () => await _service.Cerrar(id, UsuarioId, User.HasLbPermiso("INVENTARIO_APROBAR"), await Alcance()));
+
+        private IActionResult? SinPermisoAprobar() =>
+            User.HasLbPermiso("INVENTARIO_APROBAR") ? null : StatusCode(403, new { message = "Solo gerencia puede aprobar o rechazar ajustes de inventario." });
+
+        [HttpPost("inventarios/{id:long}/aprobar")]
+        public async Task<IActionResult> Aprobar(long id, [FromBody] InventarioDecisionDto? dto) =>
+            SinPermisoAprobar() ?? await Run(async () => await _service.Aprobar(id, UsuarioId, dto?.Motivo, await Alcance()));
+
+        [HttpPost("inventarios/{id:long}/rechazar")]
+        public async Task<IActionResult> Rechazar(long id, [FromBody] InventarioDecisionDto dto) =>
+            SinPermisoAprobar() ?? await Run(async () => await _service.Rechazar(id, UsuarioId, dto.Motivo, await Alcance()));
+
+        /// <summary>Monto desde el cual un ajuste de inventario exige aprobación. Lo lee cualquiera que vea el almacén; lo cambia quien aprueba.</summary>
+        [HttpGet("inventarios/configuracion")]
+        public Task<IActionResult> Umbral() => Run(async () => new InventarioUmbralDto { Umbral = await _service.ObtenerUmbral() });
+
+        [HttpPut("inventarios/configuracion")]
+        public async Task<IActionResult> GuardarUmbral([FromBody] InventarioUmbralDto dto) =>
+            SinPermisoAprobar() ?? await Run(async () => new InventarioUmbralDto { Umbral = await _service.GuardarUmbral(dto.Umbral, UsuarioId) });
 
         [HttpPost("inventarios/{id:long}/anular")]
         public async Task<IActionResult> Anular(long id) =>

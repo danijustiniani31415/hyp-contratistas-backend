@@ -731,3 +731,8 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
 - Flujo: Compras → Pendientes de compra → "Pedir cotizaciones" crea una solicitud (`lb_cotizacion_solicitud/item`); en /cotizaciones se carga el precio de cada proveedor (`lb_cotizacion`, `lb_cotizacion_precio`), se comparan y al adjudicar `CotizacionService` genera una OC por proveedor ganador vía `GenerarDesdePedidos`.
 - Reglas: elegir algo que no es lo más barato, o adjudicar con una sola cotización, exige motivo (queda en `motivo_adjudicacion`). Permiso COMPRA_CREAR. Migración `2026-11-18_lb_cotizacion.sql`.
 - Pendiente: correos y aprobación de gerencia según monto, adjuntar PDF de la cotización; inventario físico con conteos, devoluciones de obra.
+
+## Sesión 2026-11-12 — Control del inventario físico
+- Ya existía la toma de inventario (abrir conteo, guardar avance, cerrar y ajustar). Se agregó control: motivo obligatorio por diferencia, resumen en soles (faltante/sobrante a costo promedio), estado `POR_APROBAR` (la columna `estado` admite 12 caracteres) cuando faltante+sobrante supera el monto, aprobar/rechazar por gerencia y correos (`InventarioNotificador`).
+- Monto configurable en `lb_parametro` (clave INVENTARIO_UMBRAL_APROBACION, por defecto 500), editable con el permiso nuevo INVENTARIO_APROBAR (ADMIN, GERENTE_GENERAL, GERENTE_OPERACIONES). Quien cierra con ese permiso cierra directo. Migración `2026-11-19_lb_inventario_aprobacion.sql`.
+- Pendiente: conteo ciego opcional, devoluciones de sobrantes de obra, verificar correos en producción.

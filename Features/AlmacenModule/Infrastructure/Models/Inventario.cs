@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Abril_Backend.Features.AlmacenModule.Infrastructure.Models
 {
-    /// <summary>Toma de inventario físico de un almacén: EN_CONTEO → CERRADO (genera los ajustes en el kardex) o ANULADO.</summary>
+    /// <summary>Toma de inventario físico de un almacén: EN_CONTEO → CERRADO (genera los ajustes en el kardex) o ANULADO; si las diferencias superan el monto configurado pasa por POR_APROBAR (gerencia aprueba → CERRADO, o rechaza → vuelve a EN_CONTEO).</summary>
     [Table("lb_inventario")]
     public class Inventario
     {
@@ -16,6 +16,16 @@ namespace Abril_Backend.Features.AlmacenModule.Infrastructure.Models
         public long? CerradoPor { get; set; }
         public DateTimeOffset? CerradoEn { get; set; }
         public int CantidadAjustes { get; set; }
+        /// <summary>Valor (a costo promedio) de lo que faltó y de lo que sobró al cerrar el conteo.</summary>
+        public decimal ValorFaltante { get; set; }
+        public decimal ValorSobrante { get; set; }
+        /// <summary>Monto vigente cuando se cerró; con diferencias por encima de él, el cierre exigió aprobación.</summary>
+        public decimal? UmbralAplicado { get; set; }
+        public long? SolicitadoPor { get; set; }
+        public DateTimeOffset? SolicitadoEn { get; set; }
+        public long? DecididoPor { get; set; }
+        public DateTimeOffset? DecididoEn { get; set; }
+        public string? MotivoDecision { get; set; }
 
         public List<InventarioItem> Items { get; set; } = new();
     }

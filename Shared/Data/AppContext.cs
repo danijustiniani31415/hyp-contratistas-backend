@@ -88,6 +88,7 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<Stock> Stock { get; set; }
         public DbSet<Movimiento> Movimiento { get; set; }
         public DbSet<Inventario> Inventario { get; set; }
+        public DbSet<Parametro> Parametro { get; set; }
         public DbSet<InventarioItem> InventarioItem { get; set; }
         // ── Las Bravas / HP Constructores: Pedidos (Fase 2) ──
         public DbSet<Pedido> Pedido { get; set; }
