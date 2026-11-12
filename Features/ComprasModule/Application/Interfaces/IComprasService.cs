@@ -15,6 +15,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Interfaces
 
         /// <summary>Registra una recepción parcial o total de UN ítem — repone stock por lo recibido.</summary>
         Task<OrdenCompraDetailDto> RecibirItem(long ordenId, long itemId, RecibirItemDto dto, long recibidoPorId, LbScopeProyectos scope);
+        Task<OrdenCompraDetailDto> CerrarSaldo(long ordenId, CerrarSaldoDto dto, long usuarioId, LbScopeProyectos scope);
         Task<OrdenCompraDetailDto> Cancelar(long id, LbScopeProyectos scope);
 
         /// <summary>Devuelve al proveedor mercadería ya recibida (defectuosa/incorrecta) — genera una

@@ -111,6 +111,7 @@ namespace Abril_Backend.Infrastructure.Data
         public DbSet<OrdenCompra> OrdenCompra { get; set; }
         public DbSet<OrdenCompraItem> OrdenCompraItem { get; set; }
         public DbSet<OrdenCompraRecepcion> OrdenCompraRecepcion { get; set; }
+        public DbSet<CompraDiferencia> CompraDiferencia { get; set; }
         public DbSet<ComprobanteCompra> ComprobanteCompra { get; set; }
         public DbSet<ComprobanteCompraItem> ComprobanteCompraItem { get; set; }
         public DbSet<ComprobanteCompraArchivo> ComprobanteCompraArchivo { get; set; }

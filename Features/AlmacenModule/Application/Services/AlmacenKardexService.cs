@@ -65,6 +65,15 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Services
                 })
                 .ToListAsync();
 
+            // Comprometido = lo aprobado en pedidos y todavía no entregado, por almacén/producto/talla/color.
+            var almacenIds = data.Select(d => d.AlmacenId).Distinct().ToList();
+            var comprometidos = await (from pi in ctx.PedidoItem.AsNoTracking()
+                                       join pe in ctx.Pedido.AsNoTracking() on pi.PedidoId equals pe.Id
+                                       where pe.Estado == "APROBADO" && pi.Estado == "APROBADO" && almacenIds.Contains(pe.AlmacenId)
+                                       select new { pe.AlmacenId, pi.ProductoId, pi.Talla, pi.Color, Pend = (pi.CantidadAprobada ?? 0) - (pi.CantidadEntregada ?? 0) }).ToListAsync();
+            foreach (var d in data)
+                d.Comprometido = comprometidos.Where(c => c.AlmacenId == d.AlmacenId && c.ProductoId == d.ProductoId && c.Talla == d.Talla && c.Color == d.Color).Sum(c => Math.Max(0m, c.Pend));
+
             return new StockListResponseDto
             {
                 Page = page,

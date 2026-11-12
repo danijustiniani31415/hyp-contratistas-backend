@@ -24,7 +24,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Interfaces
         /// de la que el Residente visó). Si al menos un ítem queda aprobado: PENDIENTE_GERENTE →
         /// APROBADO. Si todos terminan rechazados: PENDIENTE_GERENTE → RECHAZADO.</summary>
         Task<PedidoDetailDto> Aprobar(long id, long aprobadorId, PedidoDecisionDto dto, LbScopeProyectos scope);
-        Task<PedidoDetailDto> Entregar(long id, long entregadorId, LbScopeProyectos scope);
+        Task<PedidoDetailDto> Entregar(long id, long entregadorId, LbScopeProyectos scope, EntregarPedidoDto? dto = null);
         Task<PedidoDetailDto> Cancelar(long id, long solicitanteId);
 
         /// <summary>Vista previa (sin enviar nada) de a qué correos llegaría cada notificación del

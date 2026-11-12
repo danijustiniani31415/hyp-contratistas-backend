@@ -60,6 +60,8 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
         public decimal CantidadRecibidaAlmacen { get; set; }
         public decimal CantidadDespachada { get; set; }
         public decimal CantidadConfirmadaMina { get; set; }
+        /// <summary>Lo que hay libre en el almacén del pedido: stock actual menos lo ya comprometido por otros pedidos aprobados. Solo se llena mientras el pedido sigue abierto.</summary>
+        public decimal? StockLibre { get; set; }
     }
 
     /// <summary>Decisión del Residente (Visar) o Gerencia (Aprobar) sobre un ítem puntual del
@@ -229,5 +231,23 @@ namespace Abril_Backend.Features.PedidosModule.Application.Dtos
         public List<string> Visadores { get; set; } = new();
         public List<string> Aprobadores { get; set; } = new();
         public List<string> Entregadores { get; set; } = new();
+    }
+}
+
+namespace Abril_Backend.Features.PedidosModule.Application.Dtos
+{
+    public class EntregarItemDto
+    {
+        public long ItemId { get; set; }
+        public decimal Cantidad { get; set; }
+    }
+
+    /// <summary>Entrega (total o parcial) de un pedido aprobado. Sin cuerpo = entrega todo lo pendiente, como siempre.</summary>
+    public class EntregarPedidoDto
+    {
+        /// <summary>Cantidad a entregar ahora por ítem. Lo no listado (o con 0) queda pendiente.</summary>
+        public List<EntregarItemDto>? Items { get; set; }
+        /// <summary>true = lo que falta ya no se entregará: el pedido se cierra aunque tenga saldo.</summary>
+        public bool CerrarConSaldo { get; set; }
     }
 }

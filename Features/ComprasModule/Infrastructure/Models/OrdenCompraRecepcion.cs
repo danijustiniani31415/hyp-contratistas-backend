@@ -14,6 +14,9 @@ namespace Abril_Backend.Features.ComprasModule.Infrastructure.Models
         /// vez manda una sola factura por toda la OC, factura cada envío parcial por separado.</summary>
         public string? FacturaNumero { get; set; }
         public decimal? FacturaMonto { get; set; }
+        public decimal CantidadDanada { get; set; }
+        public string? Motivo { get; set; }
+        public string? Observacion { get; set; }
         public long RecibidoPorUsuarioSistemaId { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
 

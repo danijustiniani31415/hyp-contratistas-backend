@@ -18,12 +18,15 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
         private readonly IDbContextFactory<AppDbContext> _factory;
         private readonly IAlmacenKardexService _almacenService;
         private readonly IGuiaRemisionService _guiaRemisionService;
+        private readonly CompraControlService _control;
 
         public ComprasService(
             IDbContextFactory<AppDbContext> factory,
             IAlmacenKardexService almacenService,
-            IGuiaRemisionService guiaRemisionService)
+            IGuiaRemisionService guiaRemisionService,
+            CompraControlService control)
         {
+            _control = control;
             _factory = factory;
             _almacenService = almacenService;
             _guiaRemisionService = guiaRemisionService;
@@ -299,10 +302,22 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             return await BuildDetail(ctx, id);
         }
 
+        /// <summary>Estado de la OC según lo recibido y lo cerrado como faltante.</summary>
+        internal static string CalcularEstado(OrdenCompra orden)
+        {
+            var completos = orden.Items.All(i => i.CantidadRecibida + i.CantidadFaltante >= i.CantidadSolicitada);
+            if (completos) return orden.Items.Any(i => i.CantidadFaltante > 0) ? "CERRADA" : "RECIBIDA";
+            return orden.Items.Any(i => i.CantidadRecibida > 0) ? "RECIBIDA_PARCIAL" : "PENDIENTE";
+        }
+
         public async Task<OrdenCompraDetailDto> RecibirItem(long ordenId, long itemId, RecibirItemDto dto, long recibidoPorId, LbScopeProyectos scope)
         {
-            if (dto.Cantidad <= 0)
-                throw new AbrilException("La cantidad recibida debe ser mayor a cero.", 400);
+            if (dto.Cantidad < 0 || dto.CantidadDanada < 0)
+                throw new AbrilException("Las cantidades no pueden ser negativas.", 400);
+            if (dto.Cantidad + dto.CantidadDanada <= 0)
+                throw new AbrilException("Indica cuánto llegó bien o cuánto llegó dañado.", 400);
+            if (dto.CantidadDanada > 0 && !CompraControlService.MotivosDanio.Contains(dto.Motivo ?? ""))
+                throw new AbrilException("Indica el motivo del daño.", 400);
 
             using var ctx = _factory.CreateDbContext();
             var orden = await ctx.OrdenCompra.Include(o => o.Items).Include(o => o.Almacen)
@@ -319,50 +334,107 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
             var item = orden.Items.FirstOrDefault(i => i.Id == itemId)
                 ?? throw new AbrilException("Ítem de la orden no encontrado.", 404);
 
-            var pendiente = item.CantidadSolicitada - item.CantidadRecibida;
-            if (dto.Cantidad > pendiente)
-                throw new AbrilException($"Solo quedan {pendiente} pendientes de este ítem — no se puede recibir {dto.Cantidad}.", 400);
+            var pendiente = Math.Max(0m, item.CantidadSolicitada - item.CantidadRecibida - item.CantidadFaltante);
+            var exceso = Math.Max(0m, dto.Cantidad - pendiente);
+            if (exceso > 0 && !dto.AceptarSobrante)
+                throw new AbrilException($"Solo quedan {pendiente} pendientes de este ítem — llegaron {dto.Cantidad}. Si llegó de más, confirma el sobrante.", 400);
 
-            await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
-            {
-                AlmacenId = orden.AlmacenId,
-                ProductoId = item.ProductoId,
-                Talla = item.Talla,
-                Color = item.Color,
-                TipoMovimiento = "INGRESO",
-                Cantidad = dto.Cantidad,
-                CostoUnitario = item.CostoUnitario,
-                ReferenciaTipo = "COMPRA",
-                ReferenciaId = orden.Id,
-            }, recibidoPorId);
+            if (dto.Cantidad > 0)
+                await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
+                {
+                    AlmacenId = orden.AlmacenId,
+                    ProductoId = item.ProductoId,
+                    Talla = item.Talla,
+                    Color = item.Color,
+                    TipoMovimiento = "INGRESO",
+                    Cantidad = dto.Cantidad,
+                    CostoUnitario = item.CostoUnitario,
+                    ReferenciaTipo = "COMPRA",
+                    ReferenciaId = orden.Id,
+                }, recibidoPorId);
 
-            ctx.OrdenCompraRecepcion.Add(new OrdenCompraRecepcion
+            var recepcion = new OrdenCompraRecepcion
             {
                 OrdenCompraItemId = item.Id,
                 Cantidad = dto.Cantidad,
+                CantidadDanada = dto.CantidadDanada,
+                Motivo = dto.CantidadDanada > 0 ? dto.Motivo : null,
+                Observacion = string.IsNullOrWhiteSpace(dto.Observacion) ? null : dto.Observacion.Trim(),
                 FacturaNumero = dto.FacturaNumero,
                 FacturaMonto = dto.FacturaMonto,
                 RecibidoPorUsuarioSistemaId = recibidoPorId,
                 CreadoEn = DateTimeOffset.UtcNow,
-            });
+            };
+            ctx.OrdenCompraRecepcion.Add(recepcion);
 
             item.CantidadRecibida += dto.Cantidad;
+
+            CompraDiferencia Nueva(string tipo, decimal cant, string? motivo) => new()
+            {
+                OrdenCompraId = orden.Id, OrdenCompraItemId = item.Id, Tipo = tipo, Cantidad = cant,
+                Motivo = motivo, Observacion = recepcion.Observacion, CreadoPor = recibidoPorId, CreadoEn = DateTimeOffset.UtcNow,
+            };
+            var difs = new List<(CompraDiferencia Dif, bool EsRecepcion)>();
+            if (dto.CantidadDanada > 0) difs.Add((Nueva("DANADO", dto.CantidadDanada, dto.Motivo), true));
+            if (exceso > 0) difs.Add((Nueva("SOBRANTE", exceso, null), true));
 
             // Si esta OC nació de un pedido, la recepción también avanza la trazabilidad del
             // pedido — recién con esto Logística puede ver que ya está en el almacén de Lima,
             // listo para despachar con guía.
-            if (item.PedidoItemId.HasValue)
+            if (item.PedidoItemId.HasValue && dto.Cantidad > 0)
             {
                 var pedidoItem = await ctx.PedidoItem.FindAsync(item.PedidoItemId.Value);
                 if (pedidoItem != null) pedidoItem.CantidadRecibidaAlmacen += dto.Cantidad;
             }
 
-            var todosCompletos = orden.Items.All(i => i.CantidadRecibida >= i.CantidadSolicitada);
-            var algunoRecibido = orden.Items.Any(i => i.CantidadRecibida > 0);
-            orden.Estado = todosCompletos ? "RECIBIDA" : algunoRecibido ? "RECIBIDA_PARCIAL" : "PENDIENTE";
-
+            orden.Estado = CalcularEstado(orden);
             await ctx.SaveChangesAsync();
 
+            // La diferencia necesita el id de la recepción, que existe recién después de guardar.
+            if (difs.Count > 0)
+            {
+                foreach (var (d, _) in difs) d.RecepcionId = recepcion.Id;
+                ctx.CompraDiferencia.AddRange(difs.Select(x => x.Dif));
+                await ctx.SaveChangesAsync();
+            }
+
+            await _control.NotificarRecepcion(ctx, orden, item, dto.Cantidad, dto.CantidadDanada, exceso, dto.Motivo, recibidoPorId);
+            return await BuildDetail(ctx, ordenId);
+        }
+
+        /// <summary>El proveedor no enviará el saldo: lo pendiente pasa a faltante (con diferencia por resolver) y la orden se cierra.</summary>
+        public async Task<OrdenCompraDetailDto> CerrarSaldo(long ordenId, CerrarSaldoDto dto, long usuarioId, LbScopeProyectos scope)
+        {
+            if (!CompraControlService.MotivosFaltante.Contains(dto.Motivo ?? ""))
+                throw new AbrilException("Indica por qué no llegará el saldo.", 400);
+
+            using var ctx = _factory.CreateDbContext();
+            var orden = await ctx.OrdenCompra.Include(o => o.Items).Include(o => o.Almacen)
+                .FirstOrDefaultAsync(o => o.Id == ordenId)
+                ?? throw new AbrilException("Orden de compra no encontrada.", 404);
+            if (orden.Almacen!.ProyectoId.HasValue && !scope.Permite(orden.Almacen.ProyectoId.Value))
+                throw new AbrilException("No tienes permiso para cerrar órdenes de este proyecto.", 403);
+            if (orden.Estado == "CANCELADA" || orden.Estado == "CERRADA" || orden.Estado == "RECIBIDA")
+                throw new AbrilException($"Esta orden ya está {orden.Estado.ToLower()}: no hay saldo por cerrar.", 400);
+
+            var nuevas = new List<CompraDiferencia>();
+            foreach (var it in orden.Items)
+            {
+                var pend = it.CantidadSolicitada - it.CantidadRecibida - it.CantidadFaltante;
+                if (pend <= 0) continue;
+                it.CantidadFaltante += pend;
+                nuevas.Add(new CompraDiferencia
+                {
+                    OrdenCompraId = orden.Id, OrdenCompraItemId = it.Id, Tipo = "FALTANTE", Cantidad = pend, Motivo = dto.Motivo,
+                    Observacion = string.IsNullOrWhiteSpace(dto.Observacion) ? null : dto.Observacion.Trim(), CreadoPor = usuarioId, CreadoEn = DateTimeOffset.UtcNow,
+                });
+            }
+            if (nuevas.Count == 0) throw new AbrilException("No hay saldo pendiente por cerrar.", 400);
+            ctx.CompraDiferencia.AddRange(nuevas);
+            orden.Estado = CalcularEstado(orden);
+            await ctx.SaveChangesAsync();
+
+            await _control.NotificarCierre(ctx, orden, nuevas, dto.Motivo!, usuarioId);
             return await BuildDetail(ctx, ordenId);
         }
 
@@ -428,9 +500,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                 if (pedidoItem != null) pedidoItem.CantidadRecibidaAlmacen -= dto.Cantidad;
             }
 
-            var todosCompletos = orden.Items.All(i => i.CantidadRecibida >= i.CantidadSolicitada);
-            var algunoRecibido = orden.Items.Any(i => i.CantidadRecibida > 0);
-            orden.Estado = todosCompletos ? "RECIBIDA" : algunoRecibido ? "RECIBIDA_PARCIAL" : "PENDIENTE";
+            orden.Estado = CalcularEstado(orden);
 
             await ctx.SaveChangesAsync();
 
@@ -484,6 +554,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                 Estado = orden.Estado,
                 Observacion = orden.Observacion,
                 CreadoEn = orden.CreadoEn,
+                DiferenciasAbiertas = await ctx.CompraDiferencia.CountAsync(d => d.OrdenCompraId == orden.Id && d.Estado == "ABIERTA"),
                 Items = orden.Items.Select(i => new OrdenCompraItemDetailDto
                 {
                     Id = i.Id,
@@ -494,13 +565,17 @@ namespace Abril_Backend.Features.ComprasModule.Application.Services
                     CantidadSolicitada = i.CantidadSolicitada,
                     CostoUnitario = i.CostoUnitario,
                     CantidadRecibida = i.CantidadRecibida,
-                    CantidadPendiente = i.CantidadSolicitada - i.CantidadRecibida,
+                    CantidadPendiente = Math.Max(0m, i.CantidadSolicitada - i.CantidadRecibida - i.CantidadFaltante),
+                    CantidadFaltante = i.CantidadFaltante,
+                    CantidadDanada = i.Recepciones.Sum(r => r.CantidadDanada),
                     PedidoItemId = i.PedidoItemId,
                     PedidoCodigo = i.PedidoItem?.Pedido?.Codigo,
                     Recepciones = i.Recepciones.Select(r => new OrdenCompraRecepcionDetailDto
                     {
                         Id = r.Id,
                         Cantidad = r.Cantidad,
+                        CantidadDanada = r.CantidadDanada,
+                        Motivo = r.Motivo,
                         FacturaNumero = r.FacturaNumero,
                         FacturaMonto = r.FacturaMonto,
                         RecibidoPorNombre = $"{r.RecibidoPor!.Persona!.Apellidos} {r.RecibidoPor.Persona.Nombres}",

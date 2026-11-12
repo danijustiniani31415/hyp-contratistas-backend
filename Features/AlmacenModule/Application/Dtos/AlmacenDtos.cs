@@ -17,6 +17,9 @@ namespace Abril_Backend.Features.AlmacenModule.Application.Dtos
         public decimal StockMinimo { get; set; }
         public decimal? StockMaximo { get; set; }
         public bool BajoMinimo { get; set; }
+        /// <summary>Lo que ya está prometido a pedidos aprobados y aún no se entregó.</summary>
+        public decimal Comprometido { get; set; }
+        public decimal Libre => Math.Max(0m, CantidadActual - Comprometido);
     }
 
     public class StockListResponseDto

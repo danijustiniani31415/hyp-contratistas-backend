@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Abril_Backend.Application.Exceptions;
 using Abril_Backend.Features.ComprasModule.Application.Dtos;
 using Abril_Backend.Features.ComprasModule.Application.Interfaces;
+using Abril_Backend.Features.ComprasModule.Application.Services;
 using Abril_Backend.Features.PersonasModule;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,11 +16,15 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
     public class ComprasController : ControllerBase
     {
         private readonly IComprasService _service;
+        private readonly CompraControlService _control;
 
-        public ComprasController(IComprasService service)
+        public ComprasController(IComprasService service, CompraControlService control)
         {
             _service = service;
+            _control = control;
         }
+
+        private static readonly string[] PermisosDeLectura = { "COMPRA_CREAR", "COMPRA_RECIBIR", "PAGO_PROVEEDOR_REGISTRAR" };
 
         private long CurrentUsuarioSistemaId =>
             long.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id)
@@ -95,6 +100,50 @@ namespace Abril_Backend.Features.ComprasModule.Presentation
             {
                 var scope = User.GetProyectosPermitidos("COMPRA_RECIBIR");
                 return Ok(await _service.RecibirItem(id, itemId, dto, CurrentUsuarioSistemaId, scope));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        /// <summary>El proveedor no enviará el saldo pendiente: pasa a faltante y la orden se cierra.</summary>
+        [HttpPost("ordenes/{id:long}/cerrar-saldo")]
+        public async Task<IActionResult> CerrarSaldo(long id, [FromBody] CerrarSaldoDto dto)
+        {
+            if (!User.HasLbPermiso("COMPRA_RECIBIR"))
+                return StatusCode(403, new { message = "No tienes permiso para cerrar el saldo de una compra." });
+            try
+            {
+                var scope = User.GetProyectosPermitidos("COMPRA_RECIBIR");
+                return Ok(await _service.CerrarSaldo(id, dto, CurrentUsuarioSistemaId, scope));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        /// <summary>Diferencias de compras (dañado, faltante, sobrante), abiertas o resueltas.</summary>
+        [HttpGet("diferencias")]
+        public async Task<IActionResult> ListarDiferencias([FromQuery] string? estado, [FromQuery] long? ordenId)
+        {
+            if (!PermisosDeLectura.Any(User.HasLbPermiso))
+                return StatusCode(403, new { message = "No tienes permiso para ver las diferencias de compras." });
+            try
+            {
+                var scope = User.GetProyectosPermitidosUnion(PermisosDeLectura);
+                return Ok(await _control.Listar(estado, ordenId, scope));
+            }
+            catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
+            catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
+        }
+
+        [HttpPost("diferencias/{id:long}/resolver")]
+        public async Task<IActionResult> ResolverDiferencia(long id, [FromBody] CompraDiferenciaResolverDto dto)
+        {
+            if (!User.HasLbPermiso("COMPRA_RECIBIR"))
+                return StatusCode(403, new { message = "No tienes permiso para resolver diferencias de compras." });
+            try
+            {
+                var scope = User.GetProyectosPermitidosUnion(PermisosDeLectura);
+                return Ok(await _control.Resolver(id, dto, CurrentUsuarioSistemaId, scope));
             }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }

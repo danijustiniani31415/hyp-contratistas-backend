@@ -16,6 +16,8 @@ namespace Abril_Backend.Features.ComprasModule.Infrastructure.Models
         public decimal CostoUnitario { get; set; }
         /// <summary>Se acumula con cada recepción parcial — 0 = nada recibido todavía.</summary>
         public decimal CantidadRecibida { get; set; }
+        /// <summary>Lo que el proveedor ya no enviará (saldo cerrado). Se reabre si se resuelve como reposición.</summary>
+        public decimal CantidadFaltante { get; set; }
 
         /// <summary>
         /// Null = compra libre (reposición general de almacén, como hasta ahora). Con valor =

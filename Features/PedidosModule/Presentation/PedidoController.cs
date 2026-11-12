@@ -131,11 +131,11 @@ namespace Abril_Backend.Features.PedidosModule.Presentation
         }
 
         [HttpPost("{id:long}/entregar")]
-        public async Task<IActionResult> Entregar(long id)
+        public async Task<IActionResult> Entregar(long id, [FromBody] EntregarPedidoDto? dto = null)
         {
             if (!User.HasLbPermiso("PEDIDO_ENTREGAR"))
                 return StatusCode(403, new { message = "No tienes permiso para entregar pedidos." });
-            try { return Ok(await _service.Entregar(id, CurrentUsuarioSistemaId, User.GetProyectosPermitidos("PEDIDO_ENTREGAR"))); }
+            try { return Ok(await _service.Entregar(id, CurrentUsuarioSistemaId, User.GetProyectosPermitidos("PEDIDO_ENTREGAR"), dto)); }
             catch (AbrilException ex) { return StatusCode(ex.StatusCode, new { message = ex.Message }); }
             catch (Exception) { return StatusCode(500, new { message = "Error del servidor. Por favor contactar al administrador del sistema." }); }
         }

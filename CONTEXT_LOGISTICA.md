@@ -720,3 +720,9 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
 - Recepción por viajes (ok/dañado/faltante, motivo, fotos), diferencias ABIERTA/RESUELTA (REPOSICION/RECLAMO/MERMA con PEDIDO_APROBAR/LLEGO), correos a logística/gerencias (+contadora en merma), recordatorio 24h (`RecordatorioRecepcionService`).
 - Migración `2026-11-16_lb_guia_recepcion_control.sql`. Lista de guías filtra por origen O destino.
 - Pendiente: fase 2 (compras, entregas parciales de pedido, sobrantes); correos reales sin verificar.
+
+## Sesión 2026-11-12 — Fase 2 (control en compras, entrega parcial) y stock libre
+- Compras: recepción con dañado (motivo obligatorio, no entra a stock), sobrante confirmado, "cerrar saldo" (estado CERRADA), diferencias de compras (`CompraControlService`, tabla `lb_compra_diferencia`; resoluciones REPOSICION/RECLAMO/NOTA_CREDITO/ACEPTADO; reposición de faltante reabre la OC) y correos. Migración `2026-11-17_lb_compra_recepcion_control.sql`.
+- Pedidos: `Entregar` acepta entrega parcial (`EntregarPedidoDto`); sin cuerpo entrega todo; `CerrarConSaldo` cierra con pendiente.
+- Stock libre: lista de stock trae `Comprometido/Libre`; detalle de pedido abierto trae `StockLibre` por ítem (stock - comprometido por otros pedidos aprobados). Solo informativo, no bloquea.
+- Pendiente: sobrantes de obra (devoluciones al almacén), "En camino" en stock, cotizaciones comparativas, inventario físico con conteos; probar modales de recibir/entrega con clics; verificar correos en producción.

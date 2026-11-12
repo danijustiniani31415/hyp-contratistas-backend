@@ -63,15 +63,66 @@ namespace Abril_Backend.Features.ComprasModule.Application.Dtos
 
     public class RecibirItemDto
     {
+        /// <summary>Lo que llegó en buen estado (entra al stock). Puede ser 0 si todo llegó dañado.</summary>
         public decimal Cantidad { get; set; }
         public string? FacturaNumero { get; set; }
         public decimal? FacturaMonto { get; set; }
+        /// <summary>Lo que llegó dañado: no entra al stock y genera una diferencia. Exige motivo.</summary>
+        public decimal CantidadDanada { get; set; }
+        public string? Motivo { get; set; }
+        public string? Observacion { get; set; }
+        /// <summary>true = confirma que llegó más de lo pendiente: el exceso entra al stock y queda como sobrante.</summary>
+        public bool AceptarSobrante { get; set; }
+    }
+
+    public class CerrarSaldoDto
+    {
+        /// <summary>NO_ENVIARA, SIN_STOCK_PROVEEDOR, ANULADO_PROVEEDOR u OTRO.</summary>
+        public string Motivo { get; set; } = "";
+        public string? Observacion { get; set; }
+    }
+
+    public class CompraDiferenciaResolverDto
+    {
+        /// <summary>REPOSICION, RECLAMO, NOTA_CREDITO o ACEPTADO.</summary>
+        public string Resolucion { get; set; } = "";
+        public string? Nota { get; set; }
+    }
+
+    public class CompraDiferenciaDto
+    {
+        public long Id { get; set; }
+        public long OrdenId { get; set; }
+        public string OrdenCodigo { get; set; } = "";
+        public string ProveedorNombre { get; set; } = "";
+        public string AlmacenNombre { get; set; } = "";
+        public string ProductoNombre { get; set; } = "";
+        public string Talla { get; set; } = "";
+        public string Tipo { get; set; } = "";
+        public decimal Cantidad { get; set; }
+        public string? Motivo { get; set; }
+        public string? Observacion { get; set; }
+        public string Estado { get; set; } = "";
+        public string? Resolucion { get; set; }
+        public string? ResolucionNota { get; set; }
+        public string? ReportadoPorNombre { get; set; }
+        public DateTimeOffset CreadoEn { get; set; }
+        public decimal ValorEstimado { get; set; }
+    }
+
+    public class CompraDiferenciasResumenDto
+    {
+        public List<CompraDiferenciaDto> Data { get; set; } = new();
+        public int Abiertas { get; set; }
+        public int Resueltas { get; set; }
     }
 
     public class OrdenCompraRecepcionDetailDto
     {
         public long Id { get; set; }
         public decimal Cantidad { get; set; }
+        public decimal CantidadDanada { get; set; }
+        public string? Motivo { get; set; }
         public string? FacturaNumero { get; set; }
         public decimal? FacturaMonto { get; set; }
         public string RecibidoPorNombre { get; set; } = null!;
@@ -89,6 +140,8 @@ namespace Abril_Backend.Features.ComprasModule.Application.Dtos
         public decimal CostoUnitario { get; set; }
         public decimal CantidadRecibida { get; set; }
         public decimal CantidadPendiente { get; set; }
+        public decimal CantidadFaltante { get; set; }
+        public decimal CantidadDanada { get; set; }
         public long? PedidoItemId { get; set; }
         public string? PedidoCodigo { get; set; }
         public List<OrdenCompraRecepcionDetailDto> Recepciones { get; set; } = new();
@@ -104,6 +157,7 @@ namespace Abril_Backend.Features.ComprasModule.Application.Dtos
         public string Estado { get; set; } = null!;
         public string? Observacion { get; set; }
         public DateTimeOffset CreadoEn { get; set; }
+        public int DiferenciasAbiertas { get; set; }
         public List<OrdenCompraItemDetailDto> Items { get; set; } = new();
     }
 

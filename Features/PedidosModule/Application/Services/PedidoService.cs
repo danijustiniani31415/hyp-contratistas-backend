@@ -394,7 +394,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
         /// al pedido). Valida stock de TODOS los items antes de mover cualquiera — si uno no
         /// alcanza, no se entrega nada (todo o nada; entrega parcial queda para más adelante).
         /// </summary>
-        public async Task<PedidoDetailDto> Entregar(long id, long entregadorId, LbScopeProyectos scope)
+        public async Task<PedidoDetailDto> Entregar(long id, long entregadorId, LbScopeProyectos scope, EntregarPedidoDto? dto = null)
         {
             using var ctx = _factory.CreateDbContext();
             var pedido = await ctx.Pedido.Include(p => p.Items).ThenInclude(i => i.Producto)
@@ -408,22 +408,45 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
 
             // Solo se despachan los ítems que sobrevivieron a las dos etapas de aprobación — los
             // RECHAZADO (por el Residente o por Gerencia) no consumen stock. La cantidad a entregar
-            // es la aprobada, no la solicitada (puede haber sido reducida en Visar o Aprobar).
-            var itemsAEntregar = pedido.Items.Where(i => i.Estado == "APROBADO").ToList();
+            // es la aprobada, no la solicitada (puede haber sido reducida en Visar o Aprobar). Con entregas
+            // parciales, lo que cuenta es lo que todavía falta de cada ítem.
+            decimal Pendiente(PedidoItem i) => (i.CantidadAprobada ?? 0) - (i.CantidadEntregada ?? 0);
+            var itemsAprobados = pedido.Items.Where(i => i.Estado == "APROBADO" && Pendiente(i) > 0).ToList();
+            if (itemsAprobados.Count == 0)
+                throw new AbrilException("Este pedido no tiene nada pendiente por entregar.", 400);
+
+            // Cuánto se entrega ahora de cada ítem: sin detalle = todo lo pendiente (comportamiento de siempre).
+            var porEntregar = new Dictionary<long, decimal>();
+            if (dto?.Items is { Count: > 0 })
+            {
+                foreach (var x in dto.Items.Where(x => x.Cantidad > 0))
+                {
+                    var it = itemsAprobados.FirstOrDefault(i => i.Id == x.ItemId)
+                        ?? throw new AbrilException("Uno de los ítems no se puede entregar (no es de este pedido o ya está completo).", 400);
+                    if (x.Cantidad > Pendiente(it))
+                        throw new AbrilException($"De {it.Producto!.Nombre} solo faltan {Pendiente(it)} por entregar (pusiste {x.Cantidad}).", 400);
+                    porEntregar[it.Id] = x.Cantidad;
+                }
+                if (porEntregar.Count == 0) throw new AbrilException("Indica cuánto entregas de al menos un ítem.", 400);
+            }
+            else
+            {
+                foreach (var it in itemsAprobados) porEntregar[it.Id] = Pendiente(it);
+            }
 
             var faltantes = new List<string>();
-            foreach (var item in itemsAEntregar)
+            foreach (var item in itemsAprobados.Where(i => porEntregar.ContainsKey(i.Id)))
             {
                 var stock = await ctx.Stock.FirstOrDefaultAsync(s =>
                     s.AlmacenId == pedido.AlmacenId && s.ProductoId == item.ProductoId && s.Talla == item.Talla && s.Color == item.Color);
                 var disponible = stock?.CantidadActual ?? 0;
-                if (disponible < item.CantidadAprobada!.Value)
-                    faltantes.Add($"{item.Producto!.Nombre} (pide {item.CantidadAprobada}, hay {disponible})");
+                if (disponible < porEntregar[item.Id])
+                    faltantes.Add($"{item.Producto!.Nombre} (entregas {porEntregar[item.Id]}, hay {disponible})");
             }
             if (faltantes.Count > 0)
-                throw new AbrilException("Stock insuficiente para entregar: " + string.Join("; ", faltantes), 400);
+                throw new AbrilException("Stock insuficiente para entregar: " + string.Join("; ", faltantes) + ". Puedes entregar solo lo que hay y dejar el resto pendiente.", 400);
 
-            foreach (var item in itemsAEntregar)
+            foreach (var item in itemsAprobados.Where(i => porEntregar.ContainsKey(i.Id)))
             {
                 await _almacenService.RegistrarMovimiento(new RegistrarMovimientoDto
                 {
@@ -432,24 +455,38 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                     Talla = item.Talla,
                     Color = item.Color,
                     TipoMovimiento = "SALIDA",
-                    Cantidad = item.CantidadAprobada!.Value,
+                    Cantidad = porEntregar[item.Id],
                     ReferenciaTipo = "PEDIDO",
                     ReferenciaId = pedido.Id,
                     PartidaId = item.PartidaId,
                 }, entregadorId);
 
-                item.CantidadEntregada = item.CantidadAprobada;
+                item.CantidadEntregada = (item.CantidadEntregada ?? 0) + porEntregar[item.Id];
             }
 
-            pedido.Estado = "ENTREGADO";
-            pedido.EntregadoPorUsuarioSistemaId = entregadorId;
-            pedido.EntregadoEn = DateTimeOffset.UtcNow;
+            var quedaSaldo = pedido.Items.Any(i => i.Estado == "APROBADO" && Pendiente(i) > 0);
+            var cierra = !quedaSaldo || (dto?.CerrarConSaldo ?? false);
+            if (cierra)
+            {
+                pedido.Estado = "ENTREGADO";
+                pedido.EntregadoPorUsuarioSistemaId = entregadorId;
+                pedido.EntregadoEn = DateTimeOffset.UtcNow;
+            }
             await ctx.SaveChangesAsync();
 
             var detalle = await BuildDetail(ctx, id);
-            await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
-                $"Tu pedido {detalle.Codigo} fue entregado",
-                $"Tu pedido <strong>{detalle.Codigo}</strong> ya fue entregado por <strong>{detalle.EntregadoPorNombre}</strong>.");
+            if (cierra && !quedaSaldo)
+                await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                    $"Tu pedido {detalle.Codigo} fue entregado",
+                    $"Tu pedido <strong>{detalle.Codigo}</strong> ya fue entregado por <strong>{detalle.EntregadoPorNombre}</strong>.");
+            else
+            {
+                var lineas = string.Concat(pedido.Items.Where(i => i.Estado == "APROBADO").Select(i =>
+                    $"<li>{System.Net.WebUtility.HtmlEncode(i.Producto!.Nombre)}: entregado {(i.CantidadEntregada ?? 0)} de {i.CantidadAprobada}</li>"));
+                await NotificarSolicitante(ctx, pedido.SolicitanteUsuarioSistemaId,
+                    cierra ? $"Tu pedido {detalle.Codigo} se cerró con saldo" : $"Tu pedido {detalle.Codigo} tuvo una entrega parcial",
+                    $"Del pedido <strong>{detalle.Codigo}</strong> se entregó una parte." + (cierra ? " <strong>Lo que falta ya no se entregará.</strong>" : " El resto queda pendiente de entrega.") + $"<ul>{lineas}</ul>");
+            }
 
             return detalle;
         }
@@ -730,6 +767,23 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                 .FirstOrDefaultAsync(p => p.Id == id)
                 ?? throw new AbrilException("Pedido no encontrado.", 404);
 
+            // Stock libre = lo que hay físicamente menos lo que otros pedidos aprobados ya tienen prometido y no se entregó.
+            var libres = new Dictionary<(long, string, string), decimal>();
+            if (pedido.Estado is "PENDIENTE" or "PENDIENTE_GERENTE" or "APROBADO")
+            {
+                var stocks = await ctx.Stock.AsNoTracking().Where(st => st.AlmacenId == pedido.AlmacenId).ToListAsync();
+                var comprometidos = await (from pi in ctx.PedidoItem.AsNoTracking()
+                                           join pe in ctx.Pedido.AsNoTracking() on pi.PedidoId equals pe.Id
+                                           where pe.Estado == "APROBADO" && pe.Id != pedido.Id && pe.AlmacenId == pedido.AlmacenId && pi.Estado == "APROBADO"
+                                           select new { pi.ProductoId, pi.Talla, pi.Color, Pend = (pi.CantidadAprobada ?? 0) - (pi.CantidadEntregada ?? 0) }).ToListAsync();
+                foreach (var it in pedido.Items)
+                {
+                    var actual = stocks.FirstOrDefault(st => st.ProductoId == it.ProductoId && st.Talla == it.Talla && st.Color == it.Color)?.CantidadActual ?? 0m;
+                    var comp = comprometidos.Where(c => c.ProductoId == it.ProductoId && c.Talla == it.Talla && c.Color == it.Color).Sum(c => c.Pend);
+                    libres[(it.ProductoId, it.Talla, it.Color)] = Math.Max(0m, actual - comp);
+                }
+            }
+
             return new PedidoDetailDto
             {
                 Id = pedido.Id,
@@ -756,6 +810,7 @@ namespace Abril_Backend.Features.PedidosModule.Application.Services
                 Items = pedido.Items.Select(i => new PedidoItemDetailDto
                 {
                     Id = i.Id,
+                    StockLibre = libres.TryGetValue((i.ProductoId, i.Talla, i.Color), out var libre) ? libre : null,
                     ProductoNombre = i.Producto!.Nombre,
                     ProductoCodigo = i.Producto.Codigo,
                     UnidadMedida = i.Producto.UnidadMedida,
