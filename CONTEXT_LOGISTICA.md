@@ -726,3 +726,8 @@ producción. Antes de escribir las entidades EF Core de la sección 4, leer:
 - Pedidos: `Entregar` acepta entrega parcial (`EntregarPedidoDto`); sin cuerpo entrega todo; `CerrarConSaldo` cierra con pendiente.
 - Stock libre: lista de stock trae `Comprometido/Libre`; detalle de pedido abierto trae `StockLibre` por ítem (stock - comprometido por otros pedidos aprobados). Solo informativo, no bloquea.
 - Pendiente: sobrantes de obra (devoluciones al almacén), "En camino" en stock, cotizaciones comparativas, inventario físico con conteos; probar modales de recibir/entrega con clics; verificar correos en producción.
+
+## Sesión 2026-11-12 — Cotizaciones comparativas
+- Flujo: Compras → Pendientes de compra → "Pedir cotizaciones" crea una solicitud (`lb_cotizacion_solicitud/item`); en /cotizaciones se carga el precio de cada proveedor (`lb_cotizacion`, `lb_cotizacion_precio`), se comparan y al adjudicar `CotizacionService` genera una OC por proveedor ganador vía `GenerarDesdePedidos`.
+- Reglas: elegir algo que no es lo más barato, o adjudicar con una sola cotización, exige motivo (queda en `motivo_adjudicacion`). Permiso COMPRA_CREAR. Migración `2026-11-18_lb_cotizacion.sql`.
+- Pendiente: correos y aprobación de gerencia según monto, adjuntar PDF de la cotización; inventario físico con conteos, devoluciones de obra.

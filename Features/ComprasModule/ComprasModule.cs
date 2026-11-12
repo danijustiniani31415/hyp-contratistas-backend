@@ -13,6 +13,7 @@ namespace Abril_Backend.Features.ComprasModule
             services.AddHttpClient<IComprobanteLectorService, GeminiComprobanteLectorService>(c => c.Timeout = TimeSpan.FromSeconds(90));
             services.AddScoped<IComprobanteCompraService, ComprobanteCompraService>();
             services.AddScoped<CompraControlService>();
+            services.AddScoped<CotizacionService>();
             services.AddScoped<PagosProveedorService>();
             return services;
         }
